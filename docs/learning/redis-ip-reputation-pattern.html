@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="dcterms.date" content="2026-10-27" />
+  <title>LimitPlane Pattern: Redis-backed IP Reputation</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="print.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">LimitPlane Pattern: Redis-backed IP Reputation</h1>
+<p class="date">2026-10-27</p>
+</header>
+<h2 id="learning-objectives">Learning objectives</h2>
+<p>After this block, you should be able to explain:</p>
+<ol type="1">
+<li>Why an in-memory ban does not survive a restart or work across
+replicas.</li>
+<li>Why IP reputation must expire instead of becoming a permanent
+blacklist.</li>
+<li>How HMAC protects raw IPs in Redis keys.</li>
+<li>How Redis TTLs represent bans, fingerprints, storms, strikes, and
+idle buckets.</li>
+<li>Why Lua makes one bucket or storm transition atomic.</li>
+<li>Why two separately atomic buckets are not one atomic multi-guard
+decision.</li>
+</ol>
+<h2 id="plain-english-model">Plain-English model</h2>
+<p>The gateway used to keep its notebook inside one Node process.
+Restarting that process threw the notebook away. Redis becomes a shared,
+expiring notebook:</p>
+<ul>
+<li>an active ban is a page that self-destructs after the cooldown;</li>
+<li>a fingerprint is the latest 30 observations and expires after
+inactivity;</li>
+<li>a strike survives longer so repeat offenders escalate faster;</li>
+<li>a token bucket disappears once it has been idle long enough to be
+irrelevant.</li>
+</ul>
+<p>Nothing is permanent. Good behavior and inactivity eventually remove
+the state.</p>
+<h2 id="runtime-flow">Runtime flow</h2>
+<figure>
+<img src="../architecture/limitplane-interview-hld.png"
+alt="Updated LimitPlane architecture" />
+<figcaption aria-hidden="true">Updated LimitPlane
+architecture</figcaption>
+</figure>
+<pre class="text"><code>Request IP
+   ↓ normalize
+HMAC-SHA256(secret, normalized IP)
+   ↓
+Read Redis fingerprint history
+   ↓
+Select previous lane
+   ↓
+Atomic Redis IP bucket
+   ↓
+Atomic Redis tenant bucket
+   ↓
+Allow or block
+   ↓
+Append outcome to Redis fingerprint list
+   ↓
+If repeated IP burst blocks: storm → strike → cooldown</code></pre>
+<h2 id="redis-state-model">Redis state model</h2>
+<table>
+<colgroup>
+<col style="width: 23%" />
+<col style="width: 23%" />
+<col style="width: 30%" />
+<col style="width: 23%" />
+</colgroup>
+<thead>
+<tr>
+<th>Key shape</th>
+<th>Value</th>
+<th style="text-align: right;">Default lifetime</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lp:ban:&lt;subject-HMAC&gt;</code></td>
+<td>cooldown marker</td>
+<td style="text-align: right;">remaining cooldown</td>
+<td>block the offending IP across replicas/restarts</td>
+</tr>
+<tr>
+<td><code>lp:fingerprint:&lt;IP-HMAC&gt;</code></td>
+<td>list of latest 30 events</td>
+<td style="text-align: right;">60 minutes idle</td>
+<td>restore the lane after restart</td>
+</tr>
+<tr>
+<td><code>lp:storm:&lt;subject-HMAC&gt;</code></td>
+<td>sorted block timestamps</td>
+<td style="text-align: right;">60-second window</td>
+<td>count a burst storm across replicas</td>
+</tr>
+<tr>
+<td><code>lp:strikes:&lt;subject-HMAC&gt;</code></td>
+<td>integer strike count</td>
+<td style="text-align: right;">24 hours</td>
+<td>escalate repeat offenders</td>
+</tr>
+<tr>
+<td><code>lp:bucket:&lt;key-HMAC&gt;</code></td>
+<td>tokens + last refill</td>
+<td style="text-align: right;">60 minutes idle</td>
+<td>share tenant and IP buckets</td>
+</tr>
+</tbody>
+</table>
+<p>Redis expiration automatically removes a key after its TTL. The TTL
+is refreshed when appropriate so active clients retain relevant state
+and inactive clients are eventually forgotten.</p>
+<h2 id="code-studied-ip-normalization-and-hmac">Code studied: IP
+normalization and HMAC</h2>
+<div class="sourceCode" id="cb2"><pre class="sourceCode js"><code class="sourceCode javascript"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">export</span> <span class="kw">function</span> <span class="fu">createIpHasher</span>({ secret }) {</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="op">!</span>secret) <span class="cf">throw</span> <span class="kw">new</span> <span class="bu">Error</span>(<span class="st">&quot;IP_HASH_SECRET is required when Redis IP state is enabled&quot;</span>)<span class="op">;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> (ip<span class="op">,</span> tenantId <span class="op">=</span> <span class="st">&quot;&quot;</span>) <span class="kw">=&gt;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">createHmac</span>(<span class="st">&quot;sha256&quot;</span><span class="op">,</span> secret)</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>      <span class="op">.</span><span class="fu">update</span>(<span class="vs">`</span><span class="sc">${</span>tenantId<span class="sc">}\0${</span><span class="fu">normalizeIp</span>(ip)<span class="sc">}</span><span class="vs">`</span>)</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>      <span class="op">.</span><span class="fu">digest</span>(<span class="st">&quot;hex&quot;</span>)<span class="op">;</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<p>Line by line:</p>
+<ol type="1">
+<li><code>secret</code> is a server-only value; Redis never receives
+it.</li>
+<li>Missing secret fails startup instead of silently storing raw
+identifiers.</li>
+<li><code>normalizeIp</code> collapses IPv4-mapped IPv6 such as
+<code>::ffff:203.0.113.42</code>.</li>
+<li><code>tenantId + NUL + IP</code> creates a tenant-scoped reputation
+subject.</li>
+<li>HMAC-SHA256 produces a stable 64-character identifier.</li>
+<li>HMAC is preferred over a plain hash because an attacker cannot
+precompute the key without the secret.</li>
+</ol>
+<p>The complete token-bucket key is HMACed separately. This matters
+because an anonymous tenant ID itself contains its IP
+(<code>anon:&lt;IP&gt;</code>).</p>
+<h2 id="code-studied-atomic-redis-token-bucket">Code studied: atomic
+Redis token bucket</h2>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode lua"><code class="sourceCode lua"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">local</span> <span class="va">state</span> <span class="op">=</span> <span class="va">redis</span><span class="op">.</span>call<span class="op">(</span><span class="st">&quot;HMGET&quot;</span><span class="op">,</span> <span class="cn">KEYS</span><span class="op">[</span><span class="dv">1</span><span class="op">],</span> <span class="st">&quot;tokens&quot;</span><span class="op">,</span> <span class="st">&quot;lastRefill&quot;</span><span class="op">)</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="kw">local</span> <span class="va">elapsed</span> <span class="op">=</span> <span class="fu">math.max</span><span class="op">(</span><span class="va">now</span> <span class="op">-</span> <span class="va">lastRefill</span><span class="op">,</span> <span class="dv">0</span><span class="op">)</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="va">tokens</span> <span class="op">=</span> <span class="fu">math.min</span><span class="op">(</span><span class="va">tokens</span> <span class="op">+</span> <span class="va">elapsed</span> <span class="op">*</span> <span class="va">refillRate</span><span class="op">,</span> <span class="va">capacity</span><span class="op">)</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="va">tokens</span> <span class="op">&gt;=</span> <span class="va">cost</span> <span class="cf">then</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  <span class="va">tokens</span> <span class="op">=</span> <span class="va">tokens</span> <span class="op">-</span> <span class="va">cost</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="va">allowed</span> <span class="op">=</span> <span class="dv">1</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="va">redis</span><span class="op">.</span>call<span class="op">(</span><span class="st">&quot;HSET&quot;</span><span class="op">,</span> <span class="cn">KEYS</span><span class="op">[</span><span class="dv">1</span><span class="op">],</span> <span class="st">&quot;tokens&quot;</span><span class="op">,</span> <span class="fu">tostring</span><span class="op">(</span><span class="va">tokens</span><span class="op">),</span> <span class="st">&quot;lastRefill&quot;</span><span class="op">,</span> <span class="fu">tostring</span><span class="op">(</span><span class="va">now</span><span class="op">))</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="va">redis</span><span class="op">.</span>call<span class="op">(</span><span class="st">&quot;PEXPIRE&quot;</span><span class="op">,</span> <span class="cn">KEYS</span><span class="op">[</span><span class="dv">1</span><span class="op">],</span> <span class="va">ttlMs</span><span class="op">)</span></span></code></pre></div>
+<p>Line by line:</p>
+<ol type="1">
+<li><code>HMGET</code> reads the bucket state.</li>
+<li>Elapsed time is calculated using Redis server time, avoiding replica
+clock drift.</li>
+<li>Earned tokens are capped at the current effective capacity.</li>
+<li>The request spends tokens only when enough exist.</li>
+<li><code>HSET</code> writes the new state.</li>
+<li><code>PEXPIRE</code> refreshes the inactivity TTL in
+milliseconds.</li>
+<li>The whole script runs atomically: another request cannot interleave
+halfway.</li>
+</ol>
+<h2 id="code-studied-persistent-fingerprint-window">Code studied:
+persistent fingerprint window</h2>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode lua"><code class="sourceCode lua"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="va">redis</span><span class="op">.</span>call<span class="op">(</span><span class="st">&quot;RPUSH&quot;</span><span class="op">,</span> <span class="cn">KEYS</span><span class="op">[</span><span class="dv">1</span><span class="op">],</span> <span class="cn">ARGV</span><span class="op">[</span><span class="dv">1</span><span class="op">])</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="va">redis</span><span class="op">.</span>call<span class="op">(</span><span class="st">&quot;LTRIM&quot;</span><span class="op">,</span> <span class="cn">KEYS</span><span class="op">[</span><span class="dv">1</span><span class="op">],</span> <span class="op">-</span><span class="fu">tonumber</span><span class="op">(</span><span class="cn">ARGV</span><span class="op">[</span><span class="dv">2</span><span class="op">]),</span> <span class="op">-</span><span class="dv">1</span><span class="op">)</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="va">redis</span><span class="op">.</span>call<span class="op">(</span><span class="st">&quot;PEXPIRE&quot;</span><span class="op">,</span> <span class="cn">KEYS</span><span class="op">[</span><span class="dv">1</span><span class="op">],</span> <span class="fu">tonumber</span><span class="op">(</span><span class="cn">ARGV</span><span class="op">[</span><span class="dv">3</span><span class="op">]))</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="cf">return</span> <span class="va">redis</span><span class="op">.</span>call<span class="op">(</span><span class="st">&quot;LRANGE&quot;</span><span class="op">,</span> <span class="cn">KEYS</span><span class="op">[</span><span class="dv">1</span><span class="op">],</span> <span class="dv">0</span><span class="op">,</span> <span class="op">-</span><span class="dv">1</span><span class="op">)</span></span></code></pre></div>
+<ul>
+<li><code>RPUSH</code> appends the current
+<code>{at, route, allowed}</code> event.</li>
+<li><code>LTRIM -30 -1</code> retains only the latest 30
+observations.</li>
+<li><code>PEXPIRE</code> implements automatic forgiveness after
+inactivity.</li>
+<li><code>LRANGE</code> returns the authoritative window for
+deterministic classification.</li>
+<li>The stored event does not include the raw IP; identity is only in
+the HMAC key.</li>
+</ul>
+<h2 id="repeat-offender-escalation">Repeat-offender escalation</h2>
+<p>First offense:</p>
+<pre class="text"><code>10 burst blocks in 60 seconds → strike 1 → 5-minute cooldown</code></pre>
+<p>If the strike remains within its 24-hour TTL:</p>
+<pre class="text"><code>8 burst blocks in 60 seconds → strike 2 → 10-minute cooldown</code></pre>
+<p>The threshold falls by two per retained strike, down to a minimum of
+three. The cooldown doubles per strike up to one hour. When the strike
+TTL expires, the client receives a clean slate.</p>
+<h2 id="failure-and-privacy-boundaries">Failure and privacy
+boundaries</h2>
+<h3 id="what-redis-mode-now-survives">What Redis mode now survives</h3>
+<ul>
+<li>Node process restarts;</li>
+<li>deployments;</li>
+<li>proxy configuration hot reloads;</li>
+<li>multiple gateway replicas;</li>
+<li>traffic switching from one replica to another.</li>
+</ul>
+<h3 id="what-remains-process-local">What remains process-local</h3>
+<ul>
+<li>monthly quota meter;</li>
+<li>audit ring buffer and dashboard statistics;</li>
+<li>aggregate tenant fingerprint;</li>
+<li>visitor/geo map;</li>
+<li>WebSocket and SSE connections.</li>
+</ul>
+<h3 id="remaining-production-decisions">Remaining production
+decisions</h3>
+<ul>
+<li>trust <code>X-Forwarded-For</code> only from configured
+proxies;</li>
+<li>canonicalize equivalent IPv6 spellings and decide <code>/64</code>
+versus full-address identity;</li>
+<li>tune shared-NAT behavior;</li>
+<li>choose fail-open or fail-closed behavior during Redis failure;</li>
+<li>add Redis latency/error/fallback metrics;</li>
+<li>atomically coordinate monthly, IP, and tenant reservations.</li>
+</ul>
+<h2 id="common-mistakes">Common mistakes</h2>
+<ol type="1">
+<li>Hashing only the IP suffix while leaving
+<code>anon:&lt;raw-IP&gt;</code> in another Redis key.</li>
+<li>Using an ordinary SHA hash instead of HMAC with a secret.</li>
+<li>Creating Redis keys without TTLs and leaking memory forever.</li>
+<li>Using local <code>Date.now()</code> across replicas instead of Redis
+server time.</li>
+<li>Assuming two independent Lua scripts form one atomic
+transaction.</li>
+<li>Permanently banning shared or reassigned IP addresses.</li>
+<li>Trusting arbitrary client-provided <code>X-Forwarded-For</code>
+headers.</li>
+</ol>
+<h2 id="debugging-checklist">Debugging checklist</h2>
+<pre class="text"><code>[ ] REDIS_URL is present
+[ ] IP_HASH_SECRET is present and stable across replicas
+[ ] redis-cli PING returns PONG
+[ ] Redis keys contain no plaintext client IP
+[ ] PTTL is positive for bucket/fingerprint/strike keys
+[ ] New class/server instance sees the same bucket and lane
+[ ] An IP cooldown does not ban a sibling IP
+[ ] A repeat strike lowers threshold and increases cooldown
+[ ] Unit and integration suites pass</code></pre>
+<p>Useful commands:</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">npm</span> test</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="ex">npm</span> run test:integration</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="ex">redis-cli</span> <span class="at">--scan</span> <span class="at">--pattern</span> <span class="st">&#39;lp:*&#39;</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="ex">redis-cli</span> PTTL <span class="st">&#39;&lt;exact-key&gt;&#39;</span></span></code></pre></div>
+<h2 id="interview-questions-and-model-answers">Interview questions and
+model answers</h2>
+<h3 id="why-not-store-ip-reputation-forever">Why not store IP reputation
+forever?</h3>
+<p>IPs are reassigned and shared through NAT. Permanent state creates
+privacy risk and false positives. Bounded TTLs retain near-term security
+value while allowing automatic rehabilitation.</p>
+<h3 id="why-use-hmac-rather-than-sha-256ip">Why use HMAC rather than
+SHA-256(IP)?</h3>
+<p>The IPv4 space is small enough to precompute. HMAC requires a private
+server key, so someone reading Redis cannot reverse the identifier with
+a simple lookup table.</p>
+<h3 id="why-lua">Why Lua?</h3>
+<p>Read, refill, compare, spend, write, and expire must be one atomic
+operation. Without Lua, two replicas can both read the same token count
+and both allow a request that should have permitted only one.</p>
+<h3 id="is-the-whole-request-decision-atomic-now">Is the whole request
+decision atomic now?</h3>
+<p>No. Each IP or tenant bucket operation is individually atomic, but
+the request performs multiple operations. If the IP bucket spends a
+token and the tenant bucket rejects, the IP token remains spent. A
+production upgrade needs a combined Lua reservation/commit contract or a
+carefully designed rollback/idempotency model.</p>
+<h3 id="what-is-the-availability-tradeoff">What is the availability
+tradeoff?</h3>
+<p>Shared Redis makes enforcement consistent but puts a network
+dependency in the hot path. The team must explicitly choose fail-open,
+fail-closed, or a bounded local fallback and expose the chosen mode
+through metrics and response metadata.</p>
+<h2 id="final-interview-summary">Final interview summary</h2>
+<blockquote>
+<p>LimitPlane optionally moves decision-critical IP state to Redis. It
+normalizes and HMACs identifiers, uses expiring lists for the latest 30
+fingerprint events, atomic Lua hashes for token buckets, expiring sorted
+sets for storm windows, and 24-hour strike counters for repeat-offender
+escalation. State is shared across replicas and survives restarts, but
+it automatically decays. Each Redis operation is atomic; coordinating
+all meters as one transaction is the next design step.</p>
+</blockquote>
+<h2 id="primary-references">Primary references</h2>
+<ul>
+<li><a
+href="https://redis.io/docs/latest/develop/using-commands/keyspace/">Redis
+key expiration and TTL</a></li>
+<li><a href="https://redis.io/docs/latest/commands/expire/">Redis EXPIRE
+command</a></li>
+<li><a
+href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis
+sorted sets</a></li>
+<li><a href="https://redis.io/docs/latest/develop/clients/">Official
+Redis client guidance</a></li>
+</ul>
+</body>
+</html>

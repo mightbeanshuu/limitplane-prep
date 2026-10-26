@@ -62,9 +62,11 @@ npm install github:mightbeanshuu/LimitPlane
 ```
 
 ```js
-import { createLimitPlane } from "limitplane";
+import { createFingerprints, createLimitPlane } from "limitplane";
 
 const lp = createLimitPlane({
+  fingerprints: createFingerprints(),   // aggregate tenant visibility
+  ipFingerprints: createFingerprints(), // enforced adaptive visitor lane
   policy: {
     tiers: {
       free: { capacity: 10, refillPerSecond: 1 },
@@ -243,7 +245,8 @@ only — never request bodies, never secrets. See `.env.example`.
 
 **Hot config reload (proxy).** In config-file mode, `bin/limitplane.js`
 watches the file and swaps in edited policy live (bad JSON keeps the old
-policy and says so). Bans survive reloads; meters reset.
+policy and says so). With Redis enabled, burst buckets and IP reputation
+survive reloads; without it, burst meters reset. The monthly meter is local.
 
 ## How to read this codebase (start here when you come back later)
 
@@ -285,3 +288,54 @@ node bench.js             # measured 181k limiter checks/sec (50 tenants, conc 1
 - **Heavy can't starve light** — buckets are per-route, and within a route
   heavy requests pay 5×, so cheap traffic keeps flowing while expensive AI
   traffic hits its ceiling first.
+
+## Adaptive per-IP enforcement
+
+LimitPlane now applies two burst guards when `ipFingerprints` is provided:
+
+1. A per-IP bucket whose capacity and refill rate use the visitor's behavioral
+   lane (`human`, `ai_agent`, `crawler`, `retry_bug`, or `warming`).
+2. A tenant bucket using the base plan, preserving the customer's aggregate
+   budget across every visitor.
+
+The IP guard runs first, so a visitor already over its personal limit does not
+drain tenant burst tokens. Decisions expose `scope`, `tenantRemaining`, and
+`ipRemaining`, and middleware responses include matching diagnostic headers.
+IP-scoped burst storms now cool down only that IP instead of the whole tenant.
+
+### Persistent Redis mode
+
+Set both variables and start normally:
+
+```bash
+REDIS_URL=redis://127.0.0.1:6379
+IP_HASH_SECRET=replace-with-a-long-random-secret
+node --env-file=.env src/server.js
+```
+
+If `REDIS_URL` is absent, LimitPlane uses its original in-memory mode. If it is
+present, `IP_HASH_SECRET` is mandatory and startup fails clearly when Redis
+cannot connect. Redis mode uses Lua so each individual token-bucket decision
+and each storm/strike transition is atomic.
+
+| Redis key | Contents | TTL |
+|---|---|---:|
+| `lp:ban:<subject-HMAC>` | Active IP cooldown | Remaining cooldown |
+| `lp:fingerprint:<IP-HMAC>` | Latest 30 `{at, route, allowed}` events | 60 minutes after activity |
+| `lp:strikes:<subject-HMAC>` | Repeat-offender count | 24 hours |
+| `lp:storm:<subject-HMAC>` | Recent burst-block timestamps | Storm window, normally 60 seconds |
+| `lp:bucket:<key-HMAC>` | Tokens and last-refill time | 60 minutes after activity |
+
+The HMAC is computed locally with SHA-256 after IP normalization. Entire bucket
+keys are HMACed too because anonymous tenant IDs contain their IP. Neither the
+raw IP nor `IP_HASH_SECRET` is stored in Redis. A first storm uses the normal
+threshold/cooldown; retained strikes reduce later thresholds and double later
+cooldowns up to one hour. Expiring keys provide automatic forgiveness. Redis
+documents the expiration model in its [key expiration guide](https://redis.io/docs/latest/develop/using-commands/keyspace/), and sorted sets are the standard ordered structure used here for the moving storm window.
+
+### Remaining production TODO
+
+- [ ] Trust `X-Forwarded-For` only from configured reverse proxies.
+- [ ] Canonicalize equivalent IPv6 spellings and choose an IPv6 subnet policy.
+- [ ] Tune behavior for shared NATs and large corporate networks.
+- [ ] Define fail-open/fail-closed behavior and metrics for a Redis outage.

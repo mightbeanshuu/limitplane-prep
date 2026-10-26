@@ -27,7 +27,7 @@
 import http from "node:http";
 import https from "node:https";
 import { readFileSync, watchFile } from "node:fs";
-import { createLimitPlane, createAutomations, createExplainer, createStats } from "../src/index.js";
+import { createLimitPlane, createAutomations, createExplainer, createFingerprints, createRedisIpRuntime, createStats } from "../src/index.js";
 
 // The live dashboard travels with the proxy too (data guarded by adminKey).
 const dashboardHtml = readFileSync(new URL("../src/dashboard/dashboard.html", import.meta.url), "utf8");
@@ -119,25 +119,41 @@ const transport = upstream.protocol === "https:" ? https : http; // pick the rig
 // gateway below, and every in-flight request just uses whichever one exists.
 let lp;
 
+const redisIpRuntime = await createRedisIpRuntime({
+  url: process.env.REDIS_URL,
+  secret: process.env.IP_HASH_SECRET,
+});
+
 // The autopilot lives OUTSIDE the rebuild: bans and alert history survive a
 // policy reload (an abuser shouldn't get unbanned because you tweaked a tier).
 const automations = createAutomations({
   alertWebhookUrl: flag("alert-webhook") ?? config.alertWebhookUrl,
   explainer: createExplainer({ apiKey: process.env.GROQ_API_KEY }),
   getRecentEvents: () => (lp ? lp.audit.recent(10) : []),
+  ipReputation: redisIpRuntime?.ipReputation,
 });
 
 const stats = createStats(); // survives reloads, same as the autopilot
+const fingerprints = createFingerprints(); // aggregate tenant behavior visibility
+const ipFingerprints = redisIpRuntime?.ipFingerprints ?? createFingerprints();
 
 function buildGateway(cfg) {
-  return createLimitPlane({ policy: cfg.policy, automations, onDecision: stats.onDecision });
+  return createLimitPlane({
+    policy: cfg.policy,
+    limiter: redisIpRuntime?.limiter,
+    ipLimiter: redisIpRuntime?.limiter,
+    automations,
+    fingerprints,
+    ipFingerprints,
+    onDecision: stats.onDecision,
+  });
 }
 lp = buildGateway(config);
 
 // ---- 2b. Hot reload: edit the config file, limits change live ---------------
 // Polling watch (watchFile) because it works on every OS and editor. Note the
-// honest tradeoff: a reload builds fresh limiters, so burst/monthly meters
-// restart — fine for policy tweaks, visible if you reload constantly.
+// Without Redis, a reload builds fresh burst/monthly meters. With Redis, burst
+// buckets and IP reputation survive; the in-memory monthly meter still resets.
 if (configFromFile) {
   watchFile(configPath, { interval: 2000 }, () => {
     try {

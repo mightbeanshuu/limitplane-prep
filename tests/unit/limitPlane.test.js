@@ -180,3 +180,79 @@ test("tiers without monthlyQuota skip the plan meter entirely", async () => {
   const d = await lp.check({ apiKey: "key-a", route: "/scan" });
   assert.equal(d.monthly, null); // no phantom meter, no phantom headers
 });
+
+test("per-IP adaptive guard blocks one visitor without spending tenant tokens or blocking a sibling", async () => {
+  let time = 0;
+  let tenantChecks = 0;
+  const observedIps = [];
+  const tenantLimiter = {
+    check: async () => {
+      tenantChecks += 1;
+      return { allowed: true, remaining: 99 - tenantChecks };
+    },
+  };
+  const ipFingerprints = {
+    laneFor: () => ({ label: "retry_bug", burstMult: 0.5, refillMult: 0.5 }),
+    observe: (event) => observedIps.push(event.tenantId),
+  };
+  const lp = createLimitPlane({
+    policy: {
+      tiers: { free: { capacity: 4, refillPerSecond: 0.001 } },
+      routes: { "*": { costClass: "light" } },
+      tenants: { "key-a": { tenantId: "acme", tier: "free" } },
+    },
+    limiter: tenantLimiter,
+    ipLimiter: new TokenBucketLimiter({ now: () => time }),
+    ipFingerprints,
+    audit: new AuditLog({ now: () => time }),
+  });
+
+  const firstIp = { apiKey: "key-a", ip: "1.1.1.1", route: "/ping" };
+  assert.equal((await lp.check(firstIp)).allowed, true); // IP capacity 2 -> 1
+  assert.equal((await lp.check(firstIp)).allowed, true); // 1 -> 0
+  const blocked = await lp.check(firstIp);
+  assert.equal(blocked.allowed, false);
+  assert.equal(blocked.reason, "burst");
+  assert.equal(blocked.scope, "ip");
+  assert.equal(blocked.lane, "retry_bug");
+  assert.equal(blocked.limit, 2);
+  assert.equal(tenantChecks, 2); // blocked IP request never touched the tenant bucket
+
+  const sibling = await lp.check({ apiKey: "key-a", ip: "2.2.2.2", route: "/ping" });
+  assert.equal(sibling.allowed, true); // fresh IP bucket under the same tenant
+  assert.equal(tenantChecks, 3);
+  assert.deepEqual(observedIps, ["1.1.1.1", "1.1.1.1", "1.1.1.1", "2.2.2.2"]);
+});
+
+test("middleware exposes the active IP lane and IP-scoped block headers", async () => {
+  let time = 0;
+  const lp = createLimitPlane({
+    policy: {
+      tiers: { free: { capacity: 2, refillPerSecond: 0.001 } },
+      routes: { "*": { costClass: "light" } },
+      tenants: { "key-a": { tenantId: "acme", tier: "free" } },
+    },
+    limiter: new TokenBucketLimiter({ now: () => time }),
+    ipLimiter: new TokenBucketLimiter({ now: () => time }),
+    ipFingerprints: {
+      laneFor: () => ({ label: "retry_bug", burstMult: 0.5, refillMult: 0.5 }),
+      observe: () => {},
+    },
+    audit: new AuditLog({ now: () => time }),
+  });
+  const req = {
+    headers: { "x-api-key": "key-a" },
+    url: "/ping",
+    socket: { remoteAddress: "1.1.1.1" },
+  };
+
+  await lp.middleware(req, fakeRes(), () => {}); // IP capacity is 1, so spend it
+  const res = fakeRes();
+  const blocked = await lp.middleware(req, res, () => {});
+
+  assert.equal(blocked.scope, "ip");
+  assert.equal(res.headers["x-limitplane-limit-scope"], "ip");
+  assert.equal(res.headers["x-limitplane-lane"], "retry_bug");
+  assert.equal(res.headers["x-ratelimit-ip-remaining"], "0");
+  assert.equal(res.statusCode, 429);
+});

@@ -11,10 +11,11 @@
 // What it does per request, in order:
 //   1. identify  -> who is this? (api key -> tenant + tier, else anon by IP)
 //   2. resolve   -> which jar, how big, how much does THIS request cost?
-//   3. check     -> ask the limiter (token bucket by default; Redis swappable)
-//   4. headers   -> always tell the client their budget (X-RateLimit-*)
-//   5. verdict   -> pass through, or send 429 + Retry-After + reason
-//   6. audit     -> write the decision in the diary either way
+//   3. check IP  -> adaptive visitor bucket (when per-IP fingerprints are wired)
+//   4. check org -> base-plan tenant bucket; both guards must approve
+//   5. headers   -> always tell the client their budget (X-RateLimit-*)
+//   6. verdict   -> pass through, or send 429 + Retry-After + reason
+//   7. learn     -> record the outcome; it can change the NEXT request's lane
 
 import { TokenBucketLimiter } from "../algorithms/tokenBucketLimiter.js";
 import { MonthlyQuotaLimiter } from "../algorithms/monthlyQuotaLimiter.js";
@@ -24,10 +25,12 @@ import { AuditLog } from "./auditLog.js";
 export function createLimitPlane({
   policy, // the rulebook (tiers, routes, tenants) — required
   limiter = new TokenBucketLimiter(), // the burst muscle; swap in Redis for multi-server
+  ipLimiter = new TokenBucketLimiter(), // second burst guard: isolates one abusive visitor IP
   monthly = new MonthlyQuotaLimiter(), // the plan meter (only used if a tier sets monthlyQuota)
   audit = new AuditLog(), // the diary
   automations, // optional autopilot: consulted for bans, fed every decision
-  fingerprints, // optional behavioral classifier: picks an adaptive lane
+  fingerprints, // optional tenant-level classifier (analytics + legacy adaptive fallback)
+  ipFingerprints, // optional per-IP classifier: drives the second adaptive bucket
   onDecision, // optional hook: gets every audit event (metrics, alerts...)
 } = {}) {
   const engine = new PolicyEngine(policy);
@@ -43,7 +46,12 @@ export function createLimitPlane({
 
     // step 0 (autopilot): is this client serving an auto-cooldown ban?
     // Checked BEFORE any meter so a banned client can't even spend tokens.
-    const banMs = automations ? automations.banRemainingMs(tenantId) : 0;
+    const cooldown = automations?.resolveCooldown
+      ? await automations.resolveCooldown(tenantId, ip)
+      : automations?.cooldown
+        ? automations.cooldown(tenantId, ip)
+        : { remainingMs: automations ? automations.banRemainingMs(tenantId, ip) : 0, scope: "tenant" };
+    const banMs = cooldown.remainingMs;
     if (banMs > 0) {
       const event = audit.record({
         allowed: false,
@@ -56,8 +64,9 @@ export function createLimitPlane({
         cost: plan.cost,
         remaining: 0,
         reason: "auto_cooldown",
+        scope: cooldown.scope,
       });
-      automations.onDecision(event); // it ignores its own bans, but the diary line still flows
+      await automations.onDecision(event); // it ignores its own bans, but the diary line still flows
       if (onDecision) onDecision(event);
       return {
         allowed: false,
@@ -71,6 +80,7 @@ export function createLimitPlane({
         tier,
         monthly: null,
         monthlyQuota: plan.monthlyQuota,
+        scope: cooldown.scope,
       };
     }
 
@@ -80,23 +90,57 @@ export function createLimitPlane({
       month = monthly.check({ key: plan.monthlyKey, quota: plan.monthlyQuota, cost: plan.cost });
     }
 
-    // adaptive lane: the behavioral classifier scales this client's burst
-    // allowance to how they act — humans get roomier bursts, bots get steady
-    // throughput, retry-loops get squeezed. Same tier, behavior-aware limits.
-    const lane = fingerprints ? fingerprints.laneFor(tenantId) : null;
-    const capacity = lane ? Math.max(plan.cost, Math.round(plan.capacity * lane.burstMult)) : plan.capacity;
-    const refillRatePerMs = lane ? plan.refillRatePerMs * lane.refillMult : plan.refillRatePerMs;
+    // With per-IP enforcement enabled, the tenant keeps its base-plan bucket
+    // while each visitor gets a second behavior-scaled bucket. Without it, the
+    // old tenant-adaptive behavior remains available for existing integrations.
+    const useIpGuard = Boolean(ipFingerprints && ip);
+    const tenantLane = fingerprints ? await fingerprints.laneFor(tenantId) : null;
+    const tenantCapacity = !useIpGuard && tenantLane
+      ? Math.max(plan.cost, Math.round(plan.capacity * tenantLane.burstMult))
+      : plan.capacity;
+    const tenantRefillRatePerMs = !useIpGuard && tenantLane
+      ? plan.refillRatePerMs * tenantLane.refillMult
+      : plan.refillRatePerMs;
+
+    const ipLane = useIpGuard ? await ipFingerprints.laneFor(ip) : null;
+    const ipKey = useIpGuard && ipFingerprints.keyFor ? ipFingerprints.keyFor(ip) : ip;
+    const ipCapacity = ipLane
+      ? Math.max(plan.cost, Math.round(plan.capacity * ipLane.burstMult))
+      : null;
+    const ipRefillRatePerMs = ipLane
+      ? plan.refillRatePerMs * ipLane.refillMult
+      : null;
 
     // step 3b: the burst limiter — but only spend burst tokens if the plan
     // said yes (a request the plan rejected shouldn't drain the bucket too).
     let result = { allowed: false, remaining: 0 };
+    let tenantResult = null;
+    let ipResult = null;
+    let scope = month && !month.allowed ? "monthly" : null;
     if (!month || month.allowed) {
-      result = await limiter.check({
-        key: plan.key,
-        capacity,
-        refillRatePerMs,
-        cost: plan.cost,
-      });
+      if (useIpGuard) {
+        ipResult = await ipLimiter.check({
+          key: `${plan.key}:ip:${ipKey}`,
+          capacity: ipCapacity,
+          refillRatePerMs: ipRefillRatePerMs,
+          cost: plan.cost,
+        });
+        if (!ipResult.allowed) {
+          result = ipResult;
+          scope = "ip";
+        }
+      }
+
+      if (!useIpGuard || ipResult.allowed) {
+        tenantResult = await limiter.check({
+          key: plan.key,
+          capacity: tenantCapacity,
+          refillRatePerMs: tenantRefillRatePerMs,
+          cost: plan.cost,
+        });
+        result = tenantResult;
+        if (!tenantResult.allowed) scope = "tenant";
+      }
     }
 
     const allowed = (month ? month.allowed : true) && result.allowed;
@@ -106,8 +150,16 @@ export function createLimitPlane({
 
     // How long until the burst jar refills enough? Only meaningful for burst blocks.
     const missing = Math.max(plan.cost - result.remaining, 0);
+    const blockedRefillRate = scope === "ip" ? ipRefillRatePerMs : tenantRefillRatePerMs;
     const retryAfterMs =
-      reason === "burst" ? Math.ceil(missing / plan.refillRatePerMs) : 0;
+      reason === "burst" ? Math.ceil(missing / blockedRefillRate) : 0;
+
+    const effectiveLimit = useIpGuard
+      ? Math.min(tenantCapacity, ipCapacity)
+      : tenantCapacity;
+    const effectiveRemaining = useIpGuard && allowed
+      ? Math.min(tenantResult.remaining, ipResult.remaining)
+      : result.remaining;
 
     // step 6: diary entry (recorded for allowed AND blocked — both are facts)
     const event = audit.record({
@@ -119,22 +171,28 @@ export function createLimitPlane({
       tier,
       costClass: plan.costClass,
       cost: plan.cost,
-      remaining: result.remaining,
+      remaining: effectiveRemaining,
       reason,
+      scope,
+      tenantRemaining: tenantResult?.remaining,
+      ipRemaining: ipResult?.remaining,
       monthlyUsed: month?.used,
       monthlyRemaining: month?.remaining,
-      label: lane?.label, // behavioral class at decision time
+      label: ipLane?.label ?? tenantLane?.label,
+      tenantLabel: tenantLane?.label,
+      ipLabel: ipLane?.label,
       ua, // user-agent string, for device/OS identification
     });
-    if (fingerprints) fingerprints.observe(event); // learn from this request
-    if (automations) automations.onDecision(event); // feed the autopilot
+    if (fingerprints) await fingerprints.observe(event); // aggregate tenant visibility
+    if (useIpGuard) await ipFingerprints.observe({ ...event, tenantId: ip }); // next request uses the new IP label
+    if (automations) await automations.onDecision(event); // feed the autopilot
     if (onDecision) onDecision(event);
 
     return {
       allowed,
       reason,
-      remaining: result.remaining,
-      limit: plan.capacity,
+      remaining: effectiveRemaining,
+      limit: effectiveLimit,
       cost: plan.cost,
       costClass: plan.costClass,
       retryAfterMs,
@@ -142,6 +200,10 @@ export function createLimitPlane({
       tier,
       monthly: month, // { used, remaining, resetsAt } or null
       monthlyQuota: plan.monthlyQuota,
+      scope,
+      lane: ipLane?.label ?? tenantLane?.label ?? null,
+      tenantRemaining: tenantResult?.remaining,
+      ipRemaining: ipResult?.remaining,
     };
   }
 
@@ -161,6 +223,14 @@ export function createLimitPlane({
     res.setHeader("X-RateLimit-Limit", String(decision.limit));
     res.setHeader("X-RateLimit-Remaining", String(Math.max(decision.remaining, 0)));
     res.setHeader("X-LimitPlane-Cost-Class", decision.costClass);
+    if (decision.scope) res.setHeader("X-LimitPlane-Limit-Scope", decision.scope);
+    if (decision.lane) res.setHeader("X-LimitPlane-Lane", decision.lane);
+    if (decision.tenantRemaining !== undefined) {
+      res.setHeader("X-RateLimit-Tenant-Remaining", String(Math.max(decision.tenantRemaining, 0)));
+    }
+    if (decision.ipRemaining !== undefined) {
+      res.setHeader("X-RateLimit-IP-Remaining", String(Math.max(decision.ipRemaining, 0)));
+    }
     if (decision.monthly) {
       res.setHeader("X-Monthly-Limit", String(decision.monthlyQuota));
       res.setHeader("X-Monthly-Remaining", String(decision.monthly.remaining));

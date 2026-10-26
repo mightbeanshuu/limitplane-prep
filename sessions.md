@@ -1,16 +1,16 @@
 # LimitPlane Sessions
 
 ## Current State
-- Current session: 11 complete - all 7 limiters built/tested + the gateway layer is LIVE: drop-in middleware, multi-tenant policies, AI cost classes, audit log, and the protected `/v1/demo/nsfw-check` demo route
-- Current level: Beginner-to-Interview
-- Last completed: Sessions 10+11 (combined build, 2026-07-28) - HTTP server + universal middleware + policy engine (tiers, cost classes, tenant:tier:route keys) + audit log; 14/14 unit tests, live curl demo verified
-- Active learner gaps: dynamic config reload, graceful degradation, metrics/observability; revise the new gateway files via the README "how to read this codebase" table
+- Current session: Amazon R2 architecture deep dive — Redis-backed IP reputation implemented; atomic multi-guard lesson starting
+- Current level: Medium-to-Interview review, recalibrating from retained Basic-to-Interview history
+- Last completed: Redis-backed HMAC IP identity, TTL fingerprints/bans/storms/strikes/buckets, Lua atomic operations, live privacy smoke test, diagrams, and revision PDF on 2026-10-27
+- Active learner gaps: Refresh the full HTTP/middleware request path; explain design choices, Redis/Lua atomicity, failure modes, scaling, and Amazon-style tradeoffs
 - Current blocker: None
 - Learner adaptation profile: See section below
-- Learning route: Basic to Interview
-- Prerequisite check: Completed on 2026-06-30; learner knows CRUD, basic JS, async/await, Promises, and functions; now understands all limiter algorithms, Redis/Lua atomicity, and the gateway/middleware/policy layer.
+- Learning route: Interview Prep, with basic terms explained when first encountered
+- Prerequisite check: Retained record says learner knows CRUD, basic JavaScript, async/await, Promises, and functions. Fresh calibration requested for HTTP, rate limiting, Redis, and async/await.
 - Recurring difficult topics: Noisy neighbor and "why return 429 before expensive work" need revisit.
-- Next action: Session 12 (dynamic config reload), or jump to Session 23 Helper 2 (blocked-request explanations) now that audit events exist to feed it.
+- Next action: Teach why individually atomic monthly/IP/tenant checks are not one atomic decision, then design reserve/commit/rollback.
 
 ## Learner Adaptation Profile
 - Grasp speed: Calibrating
@@ -22,6 +22,7 @@
 - Spaced-repetition items: Noisy neighbor, request/response lifecycle, headers/status codes, fixed-window mental model
 - Recurring difficult topics: None confirmed yet
 - Latest calibration note: Learner wants clean code with minimal comments (unless explicitly requesting inline comments for a specific block, then add one-liners on each meaningful line). Explain code flow in chat after writing each full block. As of 2026-07-04, learner asked to move faster and more straightforward — use bigger steps, less repetition, keep momentum. Best explanation format confirmed by learner: real-world analogy first (jar/bucket/water), then piece-by-piece code walkthrough, then a text-based flowchart for test/output tracing, then a keyword table for new terms. Learner explicitly asked to keep using this exact format going forward.
+- Latest Amazon-prep calibration: Learner requested a three-hour start-to-finish code deep dive for an Amazon R2 interview. Begin with a compact end-to-end map, then teach code block by block with deep-dive questions and explain-back checkpoints.
 
 ## Session Plan
 - [x] Session 1: HTTP/API basics - request lifecycle, status codes, headers, clients, servers
@@ -444,3 +445,223 @@
 - Stuck points: None
 - Revision PDF: Pending
 - Next session: Session 12 - dynamic config reload (or Session 23 Policy Copilot Helper 2 now that audit events exist to feed it)
+
+## Amazon R2 Sprint - Block 1: Product Meaning and End-to-End Map
+- Status: Complete (2026-10-26)
+- Concepts taught: Product problem, use cases, request lifecycle, repository map, middleware position, tenant isolation, AI cost classes, pre-handler blocking, HTTP 429, and the in-memory-vs-distributed honesty boundary
+- Examples used: Free tenant has a 10-token bucket; a heavy AI request costs 5, so two requests pass and the third is blocked
+- Project mapping: `src/index.js` -> `src/gateway/limitPlane.js` -> `src/gateway/policyEngine.js` -> limiter -> `src/gateway/auditLog.js` -> protected handler
+- Doubts asked: Fresh calibration requested for HTTP, rate limiting, Redis, and JavaScript async/await; explain-back asked for pre-handler blocking, tenant+route keys, and three heavy requests against a 10-token bucket
+- Answers given: Learner chose to continue and requested Amazon Round 2/HM framing, Autopilot coverage, and impressive LP stories; detailed explain-back answers remain to be observed
+- Learner gaps noticed: Retained gaps are HTTP/middleware internals, noisy-neighbor reasoning, and why blocking must happen before expensive work
+- Grasp-speed signal: Learner is engaged and wants faster continuation plus interview framing; concept precision still needs checkpoint evidence
+- Adaptation used: Three-hour sprint, compact map first, then code blocks and Amazon-style follow-ups
+- Learning route: Interview Prep
+- Prerequisite check: Retained record says CRUD, basic JavaScript, Promises, functions, and async/await are known; fresh calibration pending
+- Small terms explained: Planned for Block 1 — client, server, request, response, middleware, tenant, route, token, bucket, 429, header
+- Recurring difficult topics: Noisy neighbor; pre-handler blocking
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Pending; Block 1 will be included in the combined Amazon sprint pattern PDF
+- Next session: Block 2 — policy engine, Autopilot, Round 2 deep-dive questions, and LP stories
+
+## Amazon R2 Sprint - Block 2: Policy Brain, Autopilot, and LP Story Bank
+- Status: In progress (started 2026-10-26)
+- Concepts taught: Policy/limiter separation; cost-class translation; tenant identity; per-route keys; fail-loud config; deterministic Autopilot rules; deduplication; cooldown lifecycle; async notifications; AI-review guardrails; human-in-the-loop boundary
+- Examples used: 80% quota alert once per month; upgrade nudge on third cap hit; 10 burst blocks in 60 seconds causing a five-minute reversible cooldown
+- Project mapping: `src/gateway/policyEngine.js`, `src/gateway/automations.js`, `src/gateway/limitPlane.js`, `tests/unit/automations.test.js`
+- Doubts asked: User asked how Autopilot works and requested impressive LimitPlane LP stories for the Amazon SDE intern hiring-manager round
+- Answers given: Current lesson ties every design block to problem, architecture, why, alternative, tradeoff, scale, improvement, and LP evidence
+- Learner gaps noticed: Need to distinguish deterministic safety rules from optional LLM judgment and explain where human approval belongs
+- Grasp-speed signal: Pending explain-back checkpoint
+- Adaptation used: Amazon guide lens plus code evidence and Git chronology; avoid invented customer/team claims
+- Learning route: Interview Prep
+- Prerequisite check: Block 1 request path understood provisionally; learner chose to continue without answering the prior checkpoint explicitly
+- Small terms explained: constant, optional chaining, nullish coalescing, Set, Map, deduplication, cooldown, guardrail, fail-open
+- Recurring difficult topics: Pre-handler protection; distributed shared state; AI autonomy boundary
+- Commands run: See `progress.md`
+- Files changed: `.firecrawl/amazon-sde-intern-guide.md` and `.firecrawl/amazon-leadership-questions.md` (ignored local extracts), `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Pending until Block 2 checkpoint is answered
+- Next session: Finish Block 2 checkpoint, then Block 3 — token bucket execution trace and algorithm tradeoffs
+
+## Amazon R2 Architecture Deep Dive - Excalidraw HLD
+- Status: Artifact and high-resolution renders complete; clean interview HLD opened in Preview; learner review pending (2026-10-27)
+- Concepts taught: Logical-service vs deployment boundary; data plane, control plane, event/observability plane; entry modes; dual-meter decision path; event fan-out; billing-to-policy loop; real-time operator loop; storage ownership; external integrations; distributed Redis evolution
+- Examples used: Full request from user to policy, cooldown, monthly quota, adaptive lane, token bucket, audit fan-out, protected handler, and response
+- Project mapping: All runtime files in `src/`, reverse proxy in `bin/limitplane.js`, local JSON/JSONL stores, and standalone Redis implementations
+- Doubts asked: User requested one detailed HLD showing every implemented service, request/data flow, database connections, important architectural features, and an Excalidraw drawing method
+- Answers given: Created a master HLD, request-flow diagram, data-flow diagram, manual canvas recipe, numbered arrows, complete service inventory, feature deep dives, scale upgrades, narration, and likely follow-ups
+- Learner gaps noticed: Need to keep “logical service” separate from “deployed microservice” and describe Redis as implemented but not default-wired
+- Grasp-speed signal: Pending learner redraw/explanation
+- Adaptation used: Diagram-first architecture teaching with exact Excalidraw colors, zones, arrows, and Mermaid imports
+- Learning route: Interview Prep
+- Prerequisite check: Learner understands the high-level project purpose and requested a deeper connected-system view
+- Small terms explained: data plane, control plane, event fan-out, process-local state, durable file, external integration, logical service, deployment mode
+- Recurring difficult topics: Distributed shared state; truthful database/Redis boundary
+- Commands run: See `progress.md`
+- Files changed: HLD guide; four Mermaid sources; master SVG; clean/master/request/data PNGs; Puppeteer renderer config; `sessions.md`; `progress.md`
+- Stuck points: None
+- Revision PDF: Deferred to the combined Amazon sprint revision pack; the editable Excalidraw/Mermaid source is the requested artifact
+- Next session: Import and narrate the HLD, then continue Block 3
+
+## Architecture Clarification - Fingerprint, Autopilot, and AI Boundaries
+- Status: Explained in current tutoring turn; learner checkpoint pending
+- Concepts taught: Deterministic behavior fingerprinting; adaptive lane multipliers; deterministic Autopilot rules; optional Groq explainer; optional Groq AI reviewer; prompts, JSON response mode, manual validation, fail-safe behavior, and absence of Zod
+- Examples used: Retry-loop classification from timing/block ratio; 80% quota alert; three cap hits; ten burst blocks in sixty seconds; AI reviewer restricted to existing repeat-blockers
+- Project mapping: `src/gateway/fingerprint.js`, `src/gateway/automations.js`, `src/ai/aiExplainer.js`, `src/gateway/limitPlane.js`, `src/server.js`
+- Doubts asked: Whether the fingerprint uses an AI API, what Autopilot does, how it is integrated, whether prompts exist, and whether Zod validates model output
+- Answers given: Fingerprint and core Autopilot are plain deterministic code. Groq is optional for explanations and periodic review. Prompts are present. Reviewer requests a JSON object and uses `JSON.parse` plus manual checks; Zod is not used.
+- Learner gaps noticed: The term “AI Autopilot” was causing deterministic classifiers, rule automation, and optional LLM functions to blur together
+- Grasp-speed signal: Learner asks architecture-level integration questions and benefits from separating hot-path rules from optional AI
+- Adaptation used: Three-layer model — fingerprint, deterministic Autopilot, optional AI
+- Learning route: Interview Prep
+- Prerequisite check: Request decision and HLD flow already introduced
+- Small terms explained: deterministic, adaptive lane, candidate gating, response format, schema validation, fail-safe
+- Recurring difficult topics: AI boundary and human/guardrail boundary
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Included later in combined Amazon sprint pack
+- Next session: Learner explains the three layers back; then continue token-bucket execution
+
+## Adaptive Capacity - Exact Code Path
+- Status: Explained in current tutoring turn; learner checkpoint pending
+- Concepts taught: Base versus effective capacity; per-request lane multipliers; minimum capacity guard; bucket creation, refill, clamp, and spend; behavior when a lane shrinks or expands
+- Examples used: Base capacity 10 gives human 13, AI-agent 8, crawler/retry-bug 5, and warming 10; a 9-token bucket switching to retry-bug is clamped to 5 before request cost is spent
+- Project mapping: `src/gateway/fingerprint.js:26`, `src/gateway/limitPlane.js:86`, `src/algorithms/tokenBucketLimiter.js:7`
+- Doubts asked: How the code actually adjusts token-bucket capacity
+- Answers given: The tier plan is not mutated. The gateway derives effective capacity/refill values on every request and passes them to the bucket; `Math.min` enforces the current cap.
+- Learner gaps noticed: Needed separation between policy configuration, computed per-request parameters, and mutable bucket state
+- Grasp-speed signal: Learner is moving from architecture boxes into implementation mechanics
+- Adaptation used: One concrete numerical request trace and an interview-ready summary
+- Learning route: Interview Prep
+- Prerequisite check: Adaptive lane purpose and token-bucket metaphor already introduced
+- Small terms explained: effective capacity, clamp, refill rate, request cost, mutable state
+- Recurring difficult topics: Dynamic policy versus stored runtime state
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Included later in combined Amazon sprint pack
+- Next session: Explain-back checkpoint, then trace monthly quota versus burst-limit ordering
+
+## Adaptive Lane Selection - Exact Code Path
+- Status: Explained in current tutoring turn; learner checkpoint pending
+- Concepts taught: Rolling event window, warm-up, timing CV, path spread, post-block backoff, block ratio, priority-ordered rules, label change, and next-request enforcement
+- Examples used: Regular blocked retry loop; fast wide crawler; steady single-route AI agent; irregular human requests
+- Project mapping: `src/gateway/fingerprint.js`, `src/gateway/limitPlane.js`, `src/server.js`, `tests/unit/fingerprint.test.js`
+- Doubts asked: How a lane is actually selected and how adaptive lanes work end to end
+- Answers given: The classifier derives four features from the latest tenant events, evaluates deterministic rules in severity order, stores the selected label, and the gateway uses that label's multipliers on the following request.
+- Learner gaps noticed: Needed the classification stage connected to the previously explained capacity stage
+- Grasp-speed signal: Learner benefits from tracing state across consecutive requests
+- Adaptation used: Timeline plus threshold table, followed by production caveats
+- Learning route: Interview Prep
+- Prerequisite check: Learner has already covered effective capacity and token-bucket refill/clamping
+- Small terms explained: rolling window, coefficient of variation, threshold, priority order, backoff, classifier
+- Recurring difficult topics: Dynamic policy versus stored runtime state
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Included later in combined Amazon sprint pack
+- Next session: Explain-back checkpoint, then monthly quota versus burst-limit ordering
+
+## Adaptive Lane Window and Request Ordering
+- Status: Explained in current tutoring turn; learner checkpoint pending
+- Concepts taught: Window-size tradeoff, rule priority, multiplier purpose, warm-up enforcement, and previous-label/current-observation ordering
+- Examples used: Comparing 10-, 30-, and 50-event windows; tenth request causing reclassification that affects request eleven
+- Project mapping: `src/gateway/fingerprint.js:34-100`, `src/gateway/limitPlane.js:83-130`
+- Doubts asked: Why retain 30 rather than 50 events; whether retry-bug is checked before crawler; why lanes use different multipliers; whether rate limiting or labeling happens first
+- Answers given: Thirty is a tunable balance between reaction speed and noise resistance. Rules run retry-bug, crawler, AI-agent, then human. Multipliers change burst tolerance and sustained throughput. Enforcement uses the old label, and observation updates the next label afterward.
+- Learner gaps noticed: Event-window tuning and temporal ordering needed a concrete request-by-request timeline
+- Grasp-speed signal: Learner tests arbitrary design constants and execution order, which is useful interview-level reasoning
+- Adaptation used: Compared alternative window sizes and traced requests one through eleven
+- Learning route: Interview Prep
+- Prerequisite check: Learner understands basic lane features and effective token-bucket capacity
+- Small terms explained: tuning parameter, responsiveness, stability, false positive, priority rule, warm-up
+- Recurring difficult topics: Dynamic policy versus stored runtime state
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Included later in combined Amazon sprint pack
+- Next session: Explain-back checkpoint, then monthly quota versus burst-limit ordering
+
+## Per-IP Enforcement TODO and Select-Decide-Learn Ordering
+- Status: Roadmap item recorded; implementation intentionally deferred
+- Concepts taught: Two-phase lane handling, previous-history selection, current-request enforcement, post-decision learning, tenant aggregate guard, and per-IP visitor guard
+- Examples used: Request ten uses the stored lane; its allow/block outcome can change the lane used by request eleven
+- Project mapping: `src/server.js`, `src/gateway/limitPlane.js`, `README.md`
+- Doubts asked: Whether the lane should be selected before or after rate limiting, and whether per-IP classification should be enforced
+- Answers given: Select the stored lane before limiting because the limiter needs its multipliers; observe the result and update the lane afterward because allowed/blocked is a classification feature. Add per-IP as a second guard rather than replacing tenant enforcement.
+- Learner gaps noticed: The words select and update were being treated as one operation even though they occur on opposite sides of the decision
+- Grasp-speed signal: Learner is checking causal ordering and proposing architecture improvements
+- Adaptation used: Renamed the flow to select -> decide -> learn
+- Learning route: Interview Prep
+- Prerequisite check: Adaptive features, multipliers, and token-bucket mechanics already covered
+- Small terms explained: aggregate guard, per-IP guard, previous state, feedback loop
+- Recurring difficult topics: Dynamic policy versus stored runtime state
+- Commands run: See `progress.md`
+- Files changed: `src/server.js`, `README.md`, `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Included later in combined Amazon sprint pack
+- Next session: Explain-back checkpoint, then monthly quota versus burst-limit ordering
+
+## Per-IP Adaptive Enforcement - Implemented
+- Status: Complete and unit-tested
+- Concepts taught: Tenant aggregate guard versus visitor isolation; select -> decide -> learn; IP-first burst ordering; scoped decision metadata; IP-only storm cooldowns; backward-compatible optional wiring
+- Examples used: One retry-bug IP exhausts a two-token personal bucket while a sibling IP under the same tenant remains allowed
+- Project mapping: `src/gateway/limitPlane.js`, `src/gateway/automations.js`, `src/server.js`, `bin/limitplane.js`, `src/index.js`, unit tests, README, website snippet, and architecture diagrams
+- Doubts asked: Whether the lane should be selected before or after limiting and how to make per-IP classification affect enforcement
+- Answers given: Read the stored IP lane before the decision, check IP then tenant burst guards, record the outcome, and update the next lane afterward. Retain the tenant base bucket for aggregate protection.
+- Learner gaps noticed: Needed separation between aggregate account protection, individual visitor isolation, and post-decision learning
+- Grasp-speed signal: Learner requested moving from architecture understanding into a production-shaped implementation
+- Adaptation used: Taught the causal sequence first, then implemented and tested each isolation promise
+- Learning route: Interview Prep
+- Prerequisite check: Fingerprint features, multipliers, and token-bucket mechanics were already covered
+- Small terms explained: guard, scope, aggregate, isolation, backward compatibility, diagnostic header
+- Recurring difficult topics: Dynamic policy versus stored runtime state
+- Commands run: See `progress.md`
+- Files changed: Gateway, Autopilot, server/CLI/package wiring, README/site docs, unit tests, Mermaid sources, rendered diagrams, `sessions.md`, and `progress.md`
+- Stuck points: None
+- Revision PDF: Deferred because the Amazon architecture session continues; include this completed block in the combined pattern PDF
+- Next session: Monthly quota versus per-IP and tenant burst ordering, then Redis/distributed-state gap
+
+## IP Reputation Lifetime and Persistence Gap
+- Status: Explained; production persistence remains future work
+- Concepts taught: Active ban versus fingerprint history versus token balance; process-memory lifetime; eviction; TTL; forgiving reputation decay; privacy-preserving IP keys
+- Examples used: Same-process return after a five-minute ban versus return after a deployment restart
+- Project mapping: `src/gateway/fingerprint.js`, `src/gateway/automations.js`, `src/gateway/limitPlane.js`, `bin/limitplane.js`
+- Doubts asked: Whether an abusive IP's previous behavior is always stored and whether it can abuse again if history disappears
+- Answers given: History remains during the same process and keeps the restrictive lane after cooldown, but all enforcement state is lost on restart and can be evicted. It should be shared with bounded Redis TTLs, not retained forever.
+- Learner gaps noticed: Ban duration and reputation retention were being treated as the same state
+- Grasp-speed signal: Learner is proactively finding restart and repeat-offender failure modes
+- Adaptation used: Three-state lifetime table and restart timeline
+- Learning route: Interview Prep
+- Prerequisite check: Per-IP adaptive enforcement and scoped cooldown are understood
+- Small terms explained: persistence, eviction, TTL, reputation decay, keyed hash
+- Recurring difficult topics: In-memory versus durable/distributed state
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Include in the combined architecture pattern PDF
+- Next session: Redis-backed shared state design, then monthly/burst atomic ordering
+
+## Redis-backed IP Reputation and Expiring Shared State
+- Status: Complete; commit/push follows final verification
+- Concepts taught: Redis TTLs, HMAC pseudonymous keys, IP normalization, Redis server time, atomic Lua token buckets, expiring fingerprint lists, sorted-set storm windows, repeat strikes, escalating cooldowns, and shared state across replicas
+- Examples used: Five-minute first cooldown; 30-event fingerprint retained for one idle hour; strike retained 24 hours; second storm threshold falls from ten to eight and cooldown doubles
+- Project mapping: `src/redis/ipIdentity.js`, `src/redis/createRedisIpRuntime.js`, `src/algorithms/redisTokenBucketLimiter.js`, `src/gateway/redisFingerprints.js`, `src/gateway/redisIpReputation.js`, gateway/Autopilot/server/CLI wiring, tests, README, and architecture diagrams
+- Doubts asked: How to prevent an abusive IP from receiving a clean slate after restart while still allowing eventual forgiveness
+- Answers given: Store only normalized HMAC identities in Redis, give each state layer an intentional TTL, restore enforcement on each request, and retain strikes longer than active bans
+- Learner gaps noticed: Needed separation among active cooldown TTL, behavior-history TTL, strike TTL, and idle-bucket TTL
+- Grasp-speed signal: Learner identified a real restart/re-abuse flaw and requested the production evolution
+- Adaptation used: Implemented one persistence layer at a time, verified it with real Redis, then created a self-contained pattern PDF
+- Learning route: Interview Prep
+- Prerequisite check: Per-IP lane selection and token bucket enforcement already understood
+- Small terms explained: TTL, HMAC, pseudonymous identifier, Redis server time, sorted set, Lua atomicity, strike decay
+- Recurring difficult topics: In-memory versus durable/distributed state; operation-level versus workflow-level atomicity
+- Commands run: See `progress.md`
+- Files changed: Redis runtime modules, gateway/Autopilot/server/CLI/package wiring, unit/integration tests, README/env/site docs, Mermaid/image architecture artifacts, learning Markdown/HTML/PDF, `sessions.md`, and `progress.md`
+- Stuck points: Initial classifier extraction left the old body and failed syntax checking; corrected before tests. First live smoke exposed raw IP through an anonymous tenant bucket key; complete bucket-key HMAC fixed it and the second smoke confirmed zero plaintext IP keys.
+- Revision PDF: `redis_ip_reputation_pattern.pdf` (7 A4 pages, rendered and visually inspected)
+- Next session: Atomic multi-guard decision — monthly quota, IP bucket, and tenant bucket reserve/commit/rollback

@@ -236,9 +236,12 @@ node bin/limitplane.js --config limitplane.config.json</pre><button class="copy"
       </div></div>
       <div class="step"><div class="n">2</div><div>
         <h3>Create the layer with your policy</h3>
-        <div class="code"><pre>import { createLimitPlane } from "limitplane";
+        <div class="code"><pre>import { createFingerprints, createLimitPlane } from "limitplane";
 
-const lp = createLimitPlane({ policy: {
+const lp = createLimitPlane({
+  fingerprints: createFingerprints(),
+  ipFingerprints: createFingerprints(),
+  policy: {
   tiers:  { free: { capacity: 10, refillPerSecond: 1, monthlyQuota: 1000 },
             pro:  { capacity: 50, refillPerSecond: 5, monthlyQuota: 50000 } },
   routes: { "/v1/scan": { costClass: "heavy" },

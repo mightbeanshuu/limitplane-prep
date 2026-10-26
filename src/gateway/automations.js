@@ -27,14 +27,35 @@ export function createAutomations({
   stormThreshold = 10, // burst blocks...
   stormWindowMs = 60_000, // ...within this window...
   cooldownMs = 300_000, // ...earn this ban (5 min)
+  ipReputation, // optional Redis-backed IP bans, storms, and repeat strikes
   onAction, // optional hook: gets every action (for tests / metrics)
   onNote, // optional hook: fires when an action's AI note arrives (later, async)
 } = {}) {
   const actions = []; // everything the autopilot has done, newest last
   const firedOnce = new Set(); // dedup: "tenant:month:rule" fired already
   const capHits = new Map(); // tenantId -> { month, count } monthly-cap slams
-  const stormLog = new Map(); // tenantId -> [timestamps of recent burst blocks]
-  const bans = new Map(); // tenantId -> banned-until timestamp
+  const stormLog = new Map(); // tenant or tenant+IP subject -> recent burst blocks
+  const bans = new Map(); // subject -> banned-until timestamp
+  const banMeta = new Map(); // subject -> { tenantId, ip, scope }
+
+  const ipSubject = (tenantId, ip) => `ip:${tenantId}:${ip}`;
+
+  function remainingFor(subject) {
+    const until = bans.get(subject);
+    if (!until) return 0;
+    const left = until - now();
+    if (left <= 0) {
+      bans.delete(subject);
+      banMeta.delete(subject);
+      return 0;
+    }
+    return left;
+  }
+
+  function setBan(subject, until, meta) {
+    bans.set(subject, until);
+    banMeta.set(subject, meta);
+  }
 
   // Which calendar month an event belongs to — used to auto-reset dedup and
   // counters, same trick as the monthly limiter (new month id = fresh start).
@@ -72,19 +93,30 @@ export function createAutomations({
   // The gateway asks this on EVERY request, before spending any meter.
   // Returns 0 when not banned, else milliseconds of ban left (auto-unban:
   // when the clock passes `until`, this returns 0 and the ban just ends).
-  function banRemainingMs(tenantId) {
-    const until = bans.get(tenantId);
-    if (!until) return 0;
-    const left = until - now();
-    if (left <= 0) {
-      bans.delete(tenantId); // expired — clean up
-      return 0;
-    }
-    return left;
+  function cooldown(tenantId, ip) {
+    const tenantMs = remainingFor(tenantId);
+    const ipMs = ip ? remainingFor(ipSubject(tenantId, ip)) : 0;
+    return ipMs > tenantMs
+      ? { remainingMs: ipMs, scope: "ip" }
+      : { remainingMs: tenantMs, scope: "tenant" };
+  }
+
+  function banRemainingMs(tenantId, ip) {
+    return cooldown(tenantId, ip).remainingMs;
+  }
+
+  async function resolveCooldown(tenantId, ip) {
+    const local = cooldown(tenantId, ip);
+    if (!ipReputation || !ip) return local;
+    const persistentMs = await ipReputation.cooldown(tenantId, ip);
+    if (persistentMs <= local.remainingMs) return local;
+    const subject = ipSubject(tenantId, ip);
+    setBan(subject, now() + persistentMs, { tenantId, ip, scope: "ip" });
+    return { remainingMs: persistentMs, scope: "ip" };
   }
 
   // Feed me every audit event; I'll decide if anything needs doing.
-  function onDecision(event) {
+  async function onDecision(event) {
     const { tenantId, at } = event;
     if (event.reason === "auto_cooldown") return; // don't react to our own bans
 
@@ -123,20 +155,52 @@ export function createAutomations({
 
     // ---- Rule 3: burst storm -> auto cooldown -------------------------------
     if (!event.allowed && event.reason === "burst") {
-      const hits = stormLog.get(tenantId) ?? [];
+      const isIpScoped = event.scope === "ip" && event.ip;
+      const subject = isIpScoped ? ipSubject(tenantId, event.ip) : tenantId;
+
+      if (isIpScoped && ipReputation) {
+        const result = await ipReputation.recordBurstBlock({
+          tenantId,
+          ip: event.ip,
+          threshold: stormThreshold,
+          windowMs: stormWindowMs,
+          cooldownMs,
+        });
+        if (result.triggered) {
+          setBan(subject, now() + result.cooldownMs, { tenantId, ip: event.ip, scope: "ip" });
+          act({
+            type: "auto_cooldown",
+            tenantId,
+            ip: event.ip,
+            scope: "ip",
+            cooldownMs: result.cooldownMs,
+            strikes: result.strikes,
+            message: `${event.ip} in ${tenantId} reached ${result.count}/${result.threshold} burst blocks. Strike ${result.strikes}; IP cooldown ${Math.round(result.cooldownMs / 60000)} min.`,
+          });
+        }
+        return;
+      }
+
+      const hits = stormLog.get(subject) ?? [];
       hits.push(at);
       // Only keep hits inside the window — old ones don't count toward a storm.
       const fresh = hits.filter((t) => at - t < stormWindowMs);
-      stormLog.set(tenantId, fresh);
+      stormLog.set(subject, fresh);
 
-      if (fresh.length >= stormThreshold && !bans.has(tenantId)) {
-        bans.set(tenantId, now() + cooldownMs);
-        stormLog.delete(tenantId); // reset the evidence; the ban took over
+      if (fresh.length >= stormThreshold && !bans.has(subject)) {
+        setBan(subject, now() + cooldownMs, {
+          tenantId,
+          ip: isIpScoped ? event.ip : undefined,
+          scope: isIpScoped ? "ip" : "tenant",
+        });
+        stormLog.delete(subject); // reset the evidence; the ban took over
         act({
           type: "auto_cooldown",
           tenantId,
+          ip: isIpScoped ? event.ip : undefined,
+          scope: isIpScoped ? "ip" : "tenant",
           cooldownMs,
-          message: `${tenantId} was burst-blocked ${stormThreshold}x in ${stormWindowMs / 1000}s (retry loop or attack). Auto-banned for ${cooldownMs / 60000} min; auto-unbans itself.`,
+          message: `${isIpScoped ? `${event.ip} in ${tenantId}` : tenantId} was burst-blocked ${stormThreshold}x in ${stormWindowMs / 1000}s (retry loop or attack). Auto-banned for ${cooldownMs / 60000} min; auto-unbans itself.`,
         });
       }
     }
@@ -145,11 +209,12 @@ export function createAutomations({
   // Manual overrides — the human is BACK in the loop when they want to be.
   // Same ban map the storm rule uses, so the gateway needs no new wiring.
   function ban(tenantId, ms = cooldownMs, by = "operator") {
-    bans.set(tenantId, now() + ms);
+    setBan(tenantId, now() + ms, { tenantId, scope: "tenant" });
     return act({ type: "manual_ban", tenantId, message: `${by} banned ${tenantId} for ${Math.round(ms / 1000)}s.` });
   }
   function unban(tenantId, by = "operator") {
     const was = bans.delete(tenantId);
+    banMeta.delete(tenantId);
     return act({ type: "manual_unban", tenantId, message: was ? `${by} lifted the cooldown on ${tenantId}.` : `${by} tried to unban ${tenantId}, but it wasn't banned.` });
   }
 
@@ -192,7 +257,7 @@ export function createAutomations({
         if (!b.tenantId || bans.has(b.tenantId)) continue;
         if (!suspects.some((s) => s.tenantId === b.tenantId)) continue; // only from the vetted set
         const minutes = Math.min(Math.max(Number(b.minutes) || 5, 1), 60);
-        bans.set(b.tenantId, now() + minutes * 60_000);
+        setBan(b.tenantId, now() + minutes * 60_000, { tenantId: b.tenantId, scope: "tenant" });
         act({ type: "ai_ban", tenantId: b.tenantId, cooldownMs: minutes * 60_000, message: `AI reviewer banned ${b.tenantId} for ${minutes}m: ${b.reason ?? "suspected abuse"}` });
         banned.push(b.tenantId);
       }
@@ -207,7 +272,7 @@ export function createAutomations({
     const activeBans = [];
     for (const [id, until] of bans) {
       const left = until - now();
-      if (left > 0) activeBans.push({ tenantId: id, remainingMs: left });
+      if (left > 0) activeBans.push({ ...(banMeta.get(id) ?? { tenantId: id, scope: "tenant" }), remainingMs: left });
     }
     return {
       rules: [
@@ -223,6 +288,8 @@ export function createAutomations({
 
   return {
     onDecision,
+    cooldown,
+    resolveCooldown,
     banRemainingMs,
     ban,
     unban,

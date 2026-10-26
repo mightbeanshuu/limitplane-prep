@@ -1,0 +1,57 @@
+flowchart TD
+  R["1. HTTP request arrives<br/>API key, IP, route, user-agent"]
+  I["2. PolicyEngine.identify()<br/>known API key -> tenant/tier<br/>unknown -> anon:IP/free"]
+  P["3. PolicyEngine.resolve()<br/>tenant:tier:route key<br/>capacity + refill + cost class"]
+  B{"4. Active Autopilot cooldown?"}
+  BA["Record auto_cooldown event<br/>return temporary block"]
+  M{"5. Monthly quota configured?"}
+  MC{"6. Enough monthly units?"}
+  F["7. Read previous per-IP lane<br/>human / agent / crawler / retry bug"]
+  IP{"8. Per-IP adaptive bucket<br/>has enough tokens?"}
+  T{"9. Tenant base bucket<br/>has enough tokens?"}
+  A["10A. Allowed"]
+  X["10B. Blocked<br/>monthly_quota or burst<br/>scope = IP or tenant"]
+  E["11. Record audit event"]
+  H["12. Learn next IP lane + fan out"]
+  FAN["Stats + Autopilot + Fingerprints<br/>Memory + Visitor tracking + WS/SSE"]
+  HEAD["13. Set tenant/IP rate-limit headers"]
+  PASS["14A. Continue to handler/upstream"]
+  STOP["14B. Return HTTP 429 + Retry-After"]
+  RESP["15. Response returns to client"]
+  REDIS[("Optional Redis + Lua<br/>HMAC IP keys + TTL state")]
+
+  R --> I --> P --> B
+  B -- yes --> BA --> E
+  B -- no --> M
+  M -- no --> F
+  M -- yes --> MC
+  MC -- no --> X
+  MC -- yes --> F
+  F --> IP
+  F -. fingerprint events .-> REDIS
+  IP -. atomic IP bucket .-> REDIS
+  T -. atomic tenant bucket .-> REDIS
+  IP -- no --> X
+  IP -- yes, spend IP cost --> T
+  T -- yes, spend cost --> A
+  T -- no --> X
+  A --> E
+  X --> E
+  E --> H --> FAN
+  H --> HEAD
+  HEAD -->|allowed| PASS --> RESP
+  HEAD -->|blocked| STOP --> RESP
+
+  classDef input fill:#dbeafe,stroke:#2563eb;
+  classDef core fill:#dcfce7,stroke:#16a34a;
+  classDef decision fill:#fef3c7,stroke:#d97706;
+  classDef blocked fill:#fee2e2,stroke:#dc2626;
+  classDef event fill:#ffedd5,stroke:#ea580c;
+  classDef output fill:#e0e7ff,stroke:#4f46e5;
+  class R input;
+  class I,P,F,E,H,HEAD core;
+  class B,M,MC,IP,T decision;
+  class BA,X,STOP blocked;
+  class FAN event;
+  class REDIS event;
+  class A,PASS,RESP output;

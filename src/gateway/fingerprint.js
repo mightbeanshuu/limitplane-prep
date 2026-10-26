@@ -23,7 +23,7 @@
 //   retry_bug  starved until the autopilot cools them down  x0.5 burst, x0.5 refill
 //   warming    too few requests to judge yet                x1.0
 
-const LANES = {
+export const LANES = {
   human: { burstMult: 1.3, refillMult: 1.0 },
   ai_agent: { burstMult: 0.8, refillMult: 1.2 },
   crawler: { burstMult: 0.5, refillMult: 0.6 },
@@ -44,60 +44,13 @@ export function createFingerprints({ window = 30, onLabelChange } = {}) {
     c.events.push({ at: e.at, route: e.route, allowed: e.allowed });
     if (c.events.length > window) c.events.shift();
 
-    const next = classify(c.events);
+    const next = classifyFingerprint(c.events);
     if (next.label !== c.label) {
       const prev = c.label;
       c.label = next.label;
       if (onLabelChange) onLabelChange(e.tenantId, next, prev); // memory + alerts hook
     }
     c.last = next;
-  }
-
-  function classify(events) {
-    const n = events.length;
-    if (n < 6) return { label: "warming", confidence: 0, features: { n } };
-
-    // feature: rhythm — coefficient of variation of inter-arrival gaps
-    const gaps = [];
-    for (let i = 1; i < n; i++) gaps.push(Math.max(events[i].at - events[i - 1].at, 1));
-    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-    const std = Math.sqrt(gaps.reduce((a, g) => a + (g - mean) ** 2, 0) / gaps.length);
-    const cv = std / mean;
-
-    // feature: exploration — how much of their traffic is NEW ground?
-    const pathSpread = new Set(events.map((e) => e.route)).size / n;
-
-    // feature: manners — average gap right after a block vs typical gap
-    let postBlockGaps = 0, postBlockCount = 0;
-    for (let i = 1; i < n; i++) {
-      if (!events[i - 1].allowed) {
-        postBlockGaps += events[i].at - events[i - 1].at;
-        postBlockCount++;
-      }
-    }
-    const backsOff = postBlockCount > 0 && postBlockGaps / postBlockCount > mean * 2;
-    const blockRatio = events.filter((e) => !e.allowed).length / n;
-
-    const features = {
-      n,
-      cv: Number(cv.toFixed(2)),
-      pathSpread: Number(pathSpread.toFixed(2)),
-      blockRatio: Number(blockRatio.toFixed(2)),
-      backsOff,
-      meanGapMs: Math.round(mean),
-    };
-
-    // scored rules, most damning first
-    if (blockRatio > 0.4 && cv < 0.35 && !backsOff) {
-      return { label: "retry_bug", confidence: 0.9, features }; // metronome that ignores 429s
-    }
-    if (pathSpread > 0.7 && cv < 0.6 && mean < 5000) {
-      return { label: "crawler", confidence: 0.8, features }; // sweeping, never lingering
-    }
-    if (cv < 0.4 && mean < 10000) {
-      return { label: "ai_agent", confidence: 0.7, features }; // machine-steady but behaved
-    }
-    return { label: "human", confidence: 0.6, features }; // irregular = alive
   }
 
   // What the gateway asks on every request.
@@ -113,4 +66,48 @@ export function createFingerprints({ window = 30, onLabelChange } = {}) {
   }
 
   return { observe, laneFor, get };
+}
+
+export function classifyFingerprint(events) {
+  const n = events.length;
+  if (n < 6) return { label: "warming", confidence: 0, features: { n } };
+
+  const gaps = [];
+  for (let i = 1; i < n; i++) gaps.push(Math.max(events[i].at - events[i - 1].at, 1));
+  const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const std = Math.sqrt(gaps.reduce((a, g) => a + (g - mean) ** 2, 0) / gaps.length);
+  const cv = std / mean;
+
+  const pathSpread = new Set(events.map((e) => e.route)).size / n;
+
+  let postBlockGaps = 0;
+  let postBlockCount = 0;
+  for (let i = 1; i < n; i++) {
+    if (!events[i - 1].allowed) {
+      postBlockGaps += events[i].at - events[i - 1].at;
+      postBlockCount++;
+    }
+  }
+  const backsOff = postBlockCount > 0 && postBlockGaps / postBlockCount > mean * 2;
+  const blockRatio = events.filter((e) => !e.allowed).length / n;
+
+  const features = {
+    n,
+    cv: Number(cv.toFixed(2)),
+    pathSpread: Number(pathSpread.toFixed(2)),
+    blockRatio: Number(blockRatio.toFixed(2)),
+    backsOff,
+    meanGapMs: Math.round(mean),
+  };
+
+  if (blockRatio > 0.4 && cv < 0.35 && !backsOff) {
+    return { label: "retry_bug", confidence: 0.9, features };
+  }
+  if (pathSpread > 0.7 && cv < 0.6 && mean < 5000) {
+    return { label: "crawler", confidence: 0.8, features };
+  }
+  if (cv < 0.4 && mean < 10000) {
+    return { label: "ai_agent", confidence: 0.7, features };
+  }
+  return { label: "human", confidence: 0.6, features };
 }

@@ -22,6 +22,7 @@ import { createWsHub } from "./gateway/wsHub.js";
 import { createExplainer } from "./ai/aiExplainer.js";
 import { createMemory } from "./ai/memoryStore.js";
 import { createFingerprints } from "./gateway/fingerprint.js";
+import { createRedisIpRuntime } from "./redis/createRedisIpRuntime.js";
 import { parseUA } from "./gateway/userAgent.js";
 import { createTokenMeter } from "./ai/tokenMeter.js";
 import { classifyText } from "./demo/nsfwStub.js";
@@ -55,6 +56,11 @@ const policy = {
   tenants, // NOTE: the SAME object the TenantStore mutates — that's the automation
 };
 
+const redisIpRuntime = await createRedisIpRuntime({
+  url: process.env.REDIS_URL,
+  secret: process.env.IP_HASH_SECRET,
+});
+
 // ---- The autopilot + its AI voice --------------------------------------------
 // explainer: LLM-written incident notes when GROQ_API_KEY is set (run with
 // `node --env-file=.env src/server.js`), honest template notes when it isn't.
@@ -63,6 +69,7 @@ const automations = createAutomations({
   alertWebhookUrl: process.env.ALERT_WEBHOOK_URL, // e.g. a Slack webhook
   explainer,
   getRecentEvents: () => lp.audit.recent(10), // audit context for the AI
+  ipReputation: redisIpRuntime?.ipReputation,
   onAction: (a) => {
     memory.remember(`${when(a.at)} autopilot ${a.type}: ${a.message}`, { kind: "action", type: a.type });
     push("action", a); // autopilot panel updates live
@@ -74,10 +81,9 @@ const automations = createAutomations({
 });
 const stats = createStats(); // live counters for the dashboard
 
-// Per-IP fingerprints: the tenant classifier keys by site; the visitor MAP
-// needs behavior keyed by the actual IP (one person, one machine, one dot).
-// Kept separate so a shared site's traffic doesn't blur a single visitor.
-const ipFingerprints = createFingerprints();
+// Per-IP fingerprints drive the adaptive visitor bucket and the visitor map.
+// Kept separate from the tenant aggregate so one abusive visitor is isolated.
+const ipFingerprints = redisIpRuntime?.ipFingerprints ?? createFingerprints();
 
 // ---- Behavioral fingerprinting -------------------------------------------------
 // Classifies each client (human / ai_agent / crawler / retry_bug) from the
@@ -165,13 +171,15 @@ setInterval(() => {
 const monthlyMeter = new MonthlyQuotaLimiter();
 const lp = createLimitPlane({
   policy,
+  limiter: redisIpRuntime?.limiter,
+  ipLimiter: redisIpRuntime?.limiter,
   automations,
   fingerprints,
+  ipFingerprints,
   monthly: monthlyMeter,
   onDecision: (e) => {
     stats.onDecision(e);
     trackVisitor(e.ip, e.ua); // the map learns about every client + its device/OS
-    if (e.ip) ipFingerprints.observe({ tenantId: e.ip, at: e.at, route: e.route, allowed: e.allowed }); // per-IP behavior
     if (!e.allowed) {
       memory.remember(
         `${when(e.at)} ${e.tenantId} blocked on ${e.route}: ${e.reason} (tier ${e.tier}, cost ${e.cost}${e.monthlyUsed !== undefined ? `, monthly ${e.monthlyUsed} used` : ""}${e.ip ? `, ip ${e.ip}` : ""})`,

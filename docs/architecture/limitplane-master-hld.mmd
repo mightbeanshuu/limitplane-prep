@@ -1,0 +1,160 @@
+flowchart LR
+  subgraph ACTORS["1. Actors"]
+    U["End User / API Client"]
+    V["Visitor on Connected Website"]
+    A["Admin / Viewer / Org Member"]
+  end
+
+  subgraph ENTRY["2. Entry and Deployment Modes"]
+    DS["Full Demo Server<br/>src/server.js<br/>Node HTTP"]
+    PX["Reverse Proxy CLI<br/>bin/limitplane.js"]
+    MW["Embedded Middleware<br/>createLimitPlane()"]
+    BC["Traffic Beacon<br/>GET /b?k=...&p=..."]
+    UI["Dashboard + Admin UI<br/>HTML"]
+  end
+
+  subgraph CONTROL["3. Control Plane"]
+    AUTH["JWT Auth + RBAC"]
+    ORG["Organization Service<br/>users, roles, sites"]
+    BILL["Billing Service<br/>checkout + signed webhooks"]
+    TENANT["Tenant Store<br/>apiKey -> tenant + tier"]
+    CONFIG["Policy / Config<br/>tiers, routes, cost classes"]
+    ADMINAPI["Admin APIs<br/>ban, tier, site, policy"]
+  end
+
+  subgraph DATA_PLANE["4. Request Data Plane"]
+    LP["LimitPlane Middleware"]
+    PE["Policy Engine<br/>identify + resolve"]
+    BAN["Autopilot Ban Pre-check"]
+    MQ["Monthly Quota Meter"]
+    FP["Per-IP Fingerprint<br/>adaptive lane"]
+    IPTB["Per-IP Adaptive Bucket<br/>visitor isolation"]
+    TTB["Tenant Base Bucket<br/>aggregate plan guard"]
+    DEC["Decision<br/>allow or block"]
+    HDR["Headers + Response<br/>X-RateLimit / Retry-After / 429"]
+  end
+
+  subgraph APP["5. Protected Application Paths"]
+    DEMO["Demo Handlers<br/>NSFW stub / echo / ping"]
+    UP["Protected Upstream Site<br/>any stack"]
+    AIP["AI Token-Metering Proxy"]
+    CHAT["RAG Ops Chat"]
+  end
+
+  subgraph EVENTS["6. Decision Event Fan-out"]
+    AUDIT["Audit Log<br/>bounded decision diary"]
+    STATS["Stats Aggregator<br/>totals, tenant cards, series"]
+    AUTO["Autopilot Rules<br/>quota alert / nudge / IP cooldown"]
+    MEM["Incident Memory<br/>TF-IDF retrieval"]
+    RT["Real-time Push<br/>WebSocket + SSE"]
+    GEO["Visitor + UA + Geo Tracking"]
+    EXPLAIN["AI Explainer / AI Reviewer"]
+  end
+
+  subgraph STATE["7. Local State and Persistence"]
+    RAM[("In-memory Map / Set<br/>buckets, meters, bans,<br/>audit, stats, fingerprints")]
+    TFILE[(".tenants.json<br/>tenant tier persistence")]
+    OFILE[(".orgs.json<br/>users, roles, orgs, sites")]
+    MFILE[(".memory.jsonl<br/>append-only incidents")]
+    REDIS[("Redis + Lua<br/>optional shared runtime<br/>buckets, fingerprints,<br/>bans, storms, strikes")]
+  end
+
+  subgraph EXT["8. External Services"]
+    STRIPE["Stripe Checkout + Webhooks"]
+    GROQ["Groq LLM API"]
+    WH["Slack / Discord / Alert Webhook"]
+    IPAPI["ip-api.com"]
+  end
+
+  U --> DS
+  U --> PX
+  U --> MW
+  V --> BC --> DS
+  A --> UI --> DS
+
+  DS --> AUTH
+  ORG --> AUTH
+  AUTH --> ADMINAPI
+  ADMINAPI --> ORG
+  ADMINAPI --> TENANT
+  ADMINAPI --> CONFIG
+  DS --> BILL
+  DS --> AIP
+  DS --> CHAT
+
+  DS --> LP
+  PX --> LP
+  MW --> LP
+  LP --> PE
+  TENANT --> PE
+  CONFIG --> PE
+  PE --> BAN
+  AUTO --> BAN
+  BAN --> MQ
+  MQ --> FP
+  FP --> IPTB
+  IPTB --> TTB
+  TTB --> DEC
+  DEC --> HDR
+
+  DEC -- "allowed: demo mode" --> DEMO
+  DEC -- "allowed: proxy mode" --> UP
+  DEC -- "blocked" --> HDR
+  AIP --> GROQ
+  AIP --> MQ
+
+  DEC --> AUDIT
+  DEC --> STATS
+  DEC --> AUTO
+  DEC --> MEM
+  DEC --> RT
+  DEC --> GEO
+  RT --> UI
+  GEO --> IPAPI
+  AUTO --> EXPLAIN
+  EXPLAIN --> GROQ
+  AUTO --> WH
+  CHAT --> STATS
+  CHAT --> AUDIT
+  CHAT --> AUTO
+  CHAT --> MEM
+  CHAT --> GROQ
+
+  BILL --> STRIPE
+  STRIPE -- "signed webhook" --> BILL
+  BILL --> TENANT
+  ORG --> OFILE
+  TENANT --> TFILE
+  MEM --> MFILE
+  MQ --> RAM
+  IPTB --> RAM
+  TTB --> RAM
+  FP --> RAM
+  AUDIT --> RAM
+  STATS --> RAM
+  AUTO --> RAM
+
+  FP -. "30 events + TTL" .-> REDIS
+  IPTB -. "atomic Lua bucket" .-> REDIS
+  TTB -. "atomic Lua bucket" .-> REDIS
+  AUTO -. "ban + storm + strikes TTL" .-> REDIS
+
+  classDef actor fill:#dbeafe,stroke:#2563eb,color:#172554;
+  classDef entry fill:#e0e7ff,stroke:#4f46e5,color:#1e1b4b;
+  classDef control fill:#f3e8ff,stroke:#9333ea,color:#3b0764;
+  classDef core fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef app fill:#ccfbf1,stroke:#0f766e,color:#042f2e;
+  classDef event fill:#ffedd5,stroke:#ea580c,color:#431407;
+  classDef data fill:#fef3c7,stroke:#d97706,color:#451a03;
+  classDef external fill:#fce7f3,stroke:#db2777,color:#500724;
+  classDef optional fill:#fee2e2,stroke:#dc2626,color:#450a0a,stroke-dasharray: 6 4;
+
+  class U,V,A actor;
+  class DS,PX,MW,BC,UI entry;
+  class AUTH,ORG,BILL,TENANT,CONFIG,ADMINAPI control;
+  class LP,PE,BAN,MQ,FP,IPTB,TTB,DEC,HDR core;
+  class DEMO,UP,AIP,CHAT app;
+  class AUDIT,STATS,AUTO,MEM,RT,GEO,EXPLAIN event;
+  class RAM,TFILE,OFILE,MFILE data;
+  class STRIPE,GROQ,WH,IPAPI external;
+  class REDIS data;

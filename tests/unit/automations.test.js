@@ -72,6 +72,64 @@ test("slow, spread-out blocks never look like a storm", () => {
   assert.equal(auto.banRemainingMs("acme"), 0);
 });
 
+test("an IP-scoped burst storm cools down only that IP", () => {
+  const auto = createAutomations({
+    now: () => JUNE_10,
+    stormThreshold: 1,
+    cooldownMs: 60_000,
+  });
+
+  auto.onDecision(event({
+    allowed: false,
+    reason: "burst",
+    scope: "ip",
+    ip: "1.1.1.1",
+  }));
+
+  assert.ok(auto.banRemainingMs("acme", "1.1.1.1") > 0);
+  assert.equal(auto.banRemainingMs("acme", "2.2.2.2"), 0);
+  assert.equal(auto.banRemainingMs("acme"), 0);
+  assert.deepEqual(auto.state().activeBans[0], {
+    tenantId: "acme",
+    ip: "1.1.1.1",
+    scope: "ip",
+    remainingMs: 60_000,
+  });
+});
+
+test("Redis-backed IP reputation restores cooldowns and records repeat strikes", async () => {
+  const calls = [];
+  const ipReputation = {
+    cooldown: async () => 45_000,
+    recordBurstBlock: async (input) => {
+      calls.push(input);
+      return { triggered: true, count: 8, threshold: 8, strikes: 2, cooldownMs: 120_000 };
+    },
+  };
+  const actions = [];
+  const auto = createAutomations({
+    now: () => JUNE_10,
+    ipReputation,
+    onAction: (action) => actions.push(action),
+  });
+
+  assert.deepEqual(await auto.resolveCooldown("acme", "1.1.1.1"), {
+    remainingMs: 45_000,
+    scope: "ip",
+  });
+  await auto.onDecision(event({
+    allowed: false,
+    reason: "burst",
+    scope: "ip",
+    ip: "1.1.1.1",
+  }));
+
+  assert.equal(calls.length, 1);
+  assert.equal(actions.at(-1).strikes, 2);
+  assert.equal(actions.at(-1).cooldownMs, 120_000);
+  assert.ok(auto.banRemainingMs("acme", "1.1.1.1") > 0);
+});
+
 test("gateway enforces the ban: banned client gets auto_cooldown, others sail through", async () => {
   let time = JUNE_10;
   const auto = createAutomations({ now: () => time, stormThreshold: 3, stormWindowMs: 10_000, cooldownMs: 60_000 });

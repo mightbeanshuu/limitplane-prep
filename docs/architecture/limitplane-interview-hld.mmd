@@ -1,0 +1,158 @@
+flowchart TB
+  subgraph USERS["ACTORS"]
+    direction LR
+    CLIENT["End User / API Client"]
+    VISITOR["Visitor on Connected Website"]
+    OPERATOR["Admin / Viewer / Org Member"]
+  end
+
+  subgraph ENTRY["ENTRY + DEPLOYMENT MODES"]
+    direction LR
+    SERVER["Full Demo Server<br/>Node HTTP"]
+    PROXY["Reverse Proxy CLI<br/>any upstream stack"]
+    EMBED["Embedded Middleware<br/>Node applications"]
+    BEACON["Traffic Beacon<br/>GET /b"]
+    UI["Dashboard + Admin UI"]
+  end
+
+  subgraph CORE["CRITICAL REQUEST DATA PLANE"]
+    direction LR
+    GATE["LimitPlane<br/>Middleware"]
+    POLICY["Policy Engine<br/>identity + tier + route cost"]
+    BAN["Autopilot<br/>cooldown check"]
+    MONTH["Monthly<br/>quota meter"]
+    LANE["Per-IP Fingerprint<br/>adaptive lane"]
+    IPBURST["Per-IP Adaptive Bucket<br/>visitor isolation"]
+    TENANTBURST["Tenant Base Bucket<br/>aggregate plan guard"]
+    VERDICT{"Allow?"}
+  end
+
+  subgraph RESULT["REQUEST OUTCOME"]
+    direction LR
+    BLOCK["HTTP 429<br/>Retry-After + reason"]
+    DEMO["Demo handlers<br/>NSFW stub / echo / ping"]
+    UPSTREAM["Protected upstream<br/>stream request + response"]
+    AIPROXY["AI token-meter proxy<br/>actual tokens + dollars"]
+    OPSCHAT["RAG operations chat"]
+  end
+
+  subgraph EVENT["DECISION EVENT / OBSERVABILITY PLANE"]
+    direction LR
+    HOOK(("onDecision"))
+    AUDIT["Audit diary"]
+    STATS["Stats + time series"]
+    AUTO["Autopilot rules<br/>IP-scoped cooldown"]
+    FINGER["Tenant + IP<br/>fingerprint observers"]
+    MEMORY["TF-IDF incident memory"]
+    VISIT["Visitor + UA + Geo"]
+    LIVE["WebSocket + SSE"]
+    EXPLAIN["AI explainer / reviewer"]
+  end
+
+  subgraph CONTROL["CONTROL PLANE"]
+    direction LR
+    AUTH["JWT Auth + RBAC"]
+    ORGS["Users + Organizations<br/>roles + connected sites"]
+    ADMIN["Admin APIs<br/>ban / tier / policy"]
+    BILLING["Billing Service<br/>checkout + signed webhook"]
+    TENANT["TenantStore<br/>API key -> tenant + tier"]
+    CONFIG["Policy Config<br/>tiers + routes + costs"]
+  end
+
+  subgraph DATA["STATE + PERSISTENCE"]
+    direction LR
+    RAM[("Process memory<br/>buckets, quota, bans,<br/>audit, stats, fingerprints")]
+    TENANTFILE[(".tenants.json")]
+    ORGFILE[(".orgs.json")]
+    MEMFILE[(".memory.jsonl")]
+    REDIS[("Redis + Lua<br/>optional shared runtime<br/>buckets, fingerprints,<br/>bans, storms, strikes")]
+  end
+
+  subgraph EXTERNAL["EXTERNAL SERVICES"]
+    direction LR
+    STRIPE["Stripe"]
+    GROQ["Groq LLM"]
+    ALERT["Alert Webhook"]
+    IPAPI["ip-api.com"]
+  end
+
+  CLIENT --> SERVER
+  CLIENT --> PROXY
+  CLIENT --> EMBED
+  VISITOR --> BEACON --> SERVER
+  OPERATOR --> UI --> SERVER
+
+  SERVER --> GATE
+  PROXY --> GATE
+  EMBED --> GATE
+  GATE --> POLICY --> BAN --> MONTH --> LANE --> IPBURST --> TENANTBURST --> VERDICT
+  VERDICT -- "no" --> BLOCK
+  VERDICT -- "yes: demo" --> DEMO
+  VERDICT -- "yes: proxy" --> UPSTREAM
+  SERVER --> AIPROXY
+  SERVER --> OPSCHAT
+
+  VERDICT --> HOOK
+  HOOK --> AUDIT
+  HOOK --> STATS
+  HOOK --> AUTO
+  HOOK --> FINGER
+  HOOK --> MEMORY
+  HOOK --> VISIT
+  HOOK --> LIVE
+  AUTO --> EXPLAIN
+  LIVE --> UI
+
+  SERVER --> AUTH --> ADMIN
+  AUTH --> ORGS
+  ADMIN --> TENANT
+  ADMIN --> CONFIG
+  SERVER --> BILLING --> TENANT
+  TENANT --> POLICY
+  CONFIG --> POLICY
+  AUTO --> BAN
+
+  IPBURST --> RAM
+  TENANTBURST --> RAM
+  MONTH --> RAM
+  AUDIT --> RAM
+  STATS --> RAM
+  AUTO --> RAM
+  FINGER --> RAM
+  TENANT --> TENANTFILE
+  ORGS --> ORGFILE
+  MEMORY --> MEMFILE
+  LANE -. "30 events + TTL" .-> REDIS
+  IPBURST -. "atomic Lua bucket" .-> REDIS
+  TENANTBURST -. "atomic Lua bucket" .-> REDIS
+  AUTO -. "ban + storm + strikes TTL" .-> REDIS
+
+  BILLING --> STRIPE
+  STRIPE -- "signed webhook" --> BILLING
+  AIPROXY --> GROQ
+  OPSCHAT --> GROQ
+  EXPLAIN --> GROQ
+  AUTO --> ALERT
+  VISIT --> IPAPI
+
+  classDef actor fill:#dbeafe,stroke:#2563eb,color:#172554;
+  classDef entry fill:#e0e7ff,stroke:#4f46e5,color:#1e1b4b;
+  classDef core fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef result fill:#ccfbf1,stroke:#0f766e,color:#042f2e;
+  classDef blocked fill:#fee2e2,stroke:#dc2626,color:#450a0a;
+  classDef event fill:#ffedd5,stroke:#ea580c,color:#431407;
+  classDef control fill:#f3e8ff,stroke:#9333ea,color:#3b0764;
+  classDef data fill:#fef3c7,stroke:#d97706,color:#451a03;
+  classDef ext fill:#fce7f3,stroke:#db2777,color:#500724;
+  classDef optional fill:#fee2e2,stroke:#dc2626,color:#450a0a,stroke-dasharray: 6 4;
+
+  class CLIENT,VISITOR,OPERATOR actor;
+  class SERVER,PROXY,EMBED,BEACON,UI entry;
+  class GATE,POLICY,BAN,MONTH,LANE,IPBURST,TENANTBURST,VERDICT core;
+  class DEMO,UPSTREAM,AIPROXY,OPSCHAT result;
+  class BLOCK blocked;
+  class HOOK,AUDIT,STATS,AUTO,FINGER,MEMORY,VISIT,LIVE,EXPLAIN event;
+  class AUTH,ORGS,ADMIN,BILLING,TENANT,CONFIG control;
+  class RAM,TENANTFILE,ORGFILE,MEMFILE data;
+  class REDIS data;
+  class STRIPE,GROQ,ALERT,IPAPI ext;

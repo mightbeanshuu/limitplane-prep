@@ -12,11 +12,17 @@ export { AuditLog } from "./gateway/auditLog.js";
 export { createBilling, TenantStore, PLANS } from "./billing/stripeBilling.js";
 export { createAutomations } from "./gateway/automations.js";
 export { createStats } from "./gateway/stats.js";
+export { createFingerprints } from "./gateway/fingerprint.js";
+export { createRedisFingerprints } from "./gateway/redisFingerprints.js";
+export { createRedisIpReputation } from "./gateway/redisIpReputation.js";
+export { createRedisIpRuntime } from "./redis/createRedisIpRuntime.js";
+export { createIpHasher, createKeyHasher, normalizeIp } from "./redis/ipIdentity.js";
 export { createExplainer } from "./ai/aiExplainer.js";
 export { MonthlyQuotaLimiter } from "./algorithms/monthlyQuotaLimiter.js";
 
 // The raw muscles, for direct use or benchmarks:
 export { TokenBucketLimiter } from "./algorithms/tokenBucketLimiter.js";
+export { RedisTokenBucketLimiter } from "./algorithms/redisTokenBucketLimiter.js";
 export { FixedWindowLimiter } from "./algorithms/fixedWindowLimiter.js";
 export { SlidingWindowCounterLimiter } from "./algorithms/slidingWindowLimiter.js";
 export { SlidingWindowLogLimiter } from "./algorithms/slidingWindowLogLimiter.js";

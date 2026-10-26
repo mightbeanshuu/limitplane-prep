@@ -1,0 +1,57 @@
+flowchart LR
+  subgraph WRITERS["Runtime Writers"]
+    BILL["Stripe webhook / Admin tier change"]
+    ORGAPI["Signup / Org admin APIs"]
+    DEC["Limiter decisions"]
+    OPS["Autopilot + Admin actions"]
+  end
+
+  subgraph LOGICAL["Logical Services"]
+    TS["TenantStore"]
+    OS["OrgStore"]
+    PE["PolicyEngine"]
+    LM["Limiters"]
+    AU["Audit / Stats / Fingerprints"]
+    RM["RAG Memory"]
+  end
+
+  subgraph DURABLE["Durable Local Files"]
+    TF[(".tenants.json")]
+    OF[(".orgs.json")]
+    MF[(".memory.jsonl")]
+  end
+
+  subgraph VOLATILE["Process-local State"]
+    POL[("Shared policy object<br/>tiers + tenant map")]
+    MAPS[("Maps / Sets<br/>buckets, monthly usage,<br/>bans, stats, audit,<br/>fingerprints, visitors")]
+  end
+
+  subgraph OPTIONAL["Optional Shared Redis Runtime"]
+    RP["Redis state adapters"]
+    REDIS[("Redis + Lua<br/>buckets, fingerprints,<br/>bans, storms, strikes<br/>HMAC keys + TTL")]
+  end
+
+  BILL --> TS
+  TS --> TF
+  TS --> POL
+  POL --> PE
+  ORGAPI --> OS --> OF
+  DEC --> LM --> MAPS
+  DEC --> AU --> MAPS
+  DEC --> RM --> MF
+  OPS --> MAPS
+  LM -. "atomic bucket EVAL" .-> RP
+  AU -. "fingerprint + TTL" .-> RP
+  OPS -. "ban / storm / strikes" .-> RP
+  RP --> REDIS
+
+  classDef writer fill:#dbeafe,stroke:#2563eb;
+  classDef logic fill:#dcfce7,stroke:#16a34a;
+  classDef durable fill:#fef3c7,stroke:#d97706;
+  classDef volatile fill:#ffedd5,stroke:#ea580c;
+  classDef optional fill:#fee2e2,stroke:#dc2626,stroke-dasharray: 6 4;
+  class BILL,ORGAPI,DEC,OPS writer;
+  class TS,OS,PE,LM,AU,RM logic;
+  class TF,OF,MF durable;
+  class POL,MAPS volatile;
+  class RP,REDIS optional;

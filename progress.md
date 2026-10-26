@@ -1084,3 +1084,165 @@ Build a production-style distributed, multi-tenant rate limiter with Redis/Lua, 
 - Dependencies changed: none
 - Learner stuck point: None
 - Revisit later: Session 12 dynamic config reload still the natural next step.
+
+## 2026-10-26 15:29 IST - Amazon R2 Three-Hour Deep-Dive Setup
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; `ls -la` plus `rg --files` for project/tracker files; `git status --short --branch`; `git log -1 --format='%H%n%ad%n%s' --date=iso-strict`; `find /Users/mac/Desktop/amazon-prep/limitplane-prep -maxdepth 2` for tracker/instruction files; `cat sessions.md`; `cat progress.md`; `nl -ba` on `package.json`, `src/index.js`, `src/server.js`, `src/demo/policy.demo.js`, `src/demo/nsfwStub.js`, `src/gateway/policyEngine.js`, `src/gateway/limitPlane.js`, `src/gateway/auditLog.js`, `src/algorithms/tokenBucketLimiter.js`, and `tests/unit/limitPlane.test.js`; `date '+%Y-%m-%d %H:%M %Z'`; `npm test`; `tail -n 35 sessions.md`; `tail -n 35 progress.md`
+- Reason: Resume LimitPlane from the historical snapshot and build a verified, code-grounded three-hour Amazon R2 interview lesson from start to finish.
+- Result: Success; confirmed commit `b2d107b`, no local implementation changes, mapped the primary request path, and verified all 62 unit tests pass.
+- Files changed: `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: No new stuck point yet; fresh prerequisite calibration requested.
+- Revisit later: Redis integration tests require a live Redis instance and were not run during setup; generate the revision PDF after the teaching block is completed.
+
+## 2026-10-26 15:29 IST - Tracker Update
+- Command: none (agent file edit)
+- Reason: Record the Amazon interview sprint route, current block, calibration assumptions, commands, and verification evidence.
+- Result: Success.
+- Files changed: `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: none recorded yet
+- Revisit later: Update grasp-speed signal after the learner answers the Block 1 checkpoint.
+
+## 2026-10-26 19:47 IST - Amazon Round 2 Guides and Autopilot Lesson Preparation
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; `cat /Users/mac/.agents/skills/firecrawl-parse/SKILL.md`; read current/tail sections of `sessions.md` and `progress.md`; `ls -lh` on both supplied PDFs and `.firecrawl`; `mkdir -p .firecrawl`; `rg -n '^\\.firecrawl/?$' .gitignore`; `firecrawl parse '/Users/mac/Downloads/Skill Turtle Guide for Amazon SDE Intern 2.pdf' -o .firecrawl/amazon-sde-intern-guide.md --timeout 120000`; `firecrawl parse '/Users/mac/Downloads/Same Ques for Leadership Principle 2.pdf' -o .firecrawl/amazon-leadership-questions.md --timeout 120000`; `wc`, `rg`, and `sed` to inspect Round 2, project, STAR, LP, AI, and human-in-the-loop sections; `nl -ba src/gateway/automations.js`; `nl -ba tests/unit/automations.test.js`; Git history/stat inspection for Autopilot, proxy, and Redis/Lua files; `date '+%Y-%m-%d %H:%M %Z'`
+- Reason: Refine the next LimitPlane lesson around the supplied Amazon Round 2 and Leadership Principle material and ground the Autopilot/LP stories in real code and repository history.
+- Result: Success; both PDFs parsed locally. The Round 2 guide prioritizes project depth, repeated why/tradeoff/scale questions, 5–7 reusable STAR stories, AI judgment, and human-in-the-loop reasoning. Autopilot implementation and tests were mapped to those themes.
+- Files changed: `.firecrawl/amazon-sde-intern-guide.md`, `.firecrawl/amazon-leadership-questions.md`, `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: No new stuck point; learner wants Autopilot explained and high-impact but truthful LP stories.
+- Revisit later: Convert story drafts into final STAR answers only after learner confirms personal context, ownership, and any real impact metrics.
+
+## 2026-10-26 19:47 IST - Tracker Update
+- Command: none (agent file edit)
+- Reason: Mark Block 1 complete, start Block 2, record the Amazon guide findings, and preserve the no-fabrication boundary for behavioral stories.
+- Result: Success.
+- Files changed: `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: none recorded yet
+- Revisit later: Generate the combined revision PDF when the interactive block is complete.
+
+## 2026-10-27 03:01 IST - Detailed Excalidraw HLD Pack
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; inspected current `sessions.md`, `progress.md`, Git status, repository file inventory, imports, server routes, external URLs, state/persistence operations, reverse proxy, billing, auth, organizations, memory, AI, fingerprints, stats, WebSocket/SSE, gateway, policy, Autopilot, limiter, README, and Redis usages with `rg`, `sed`, and `nl`; `mkdir -p docs/architecture`; checked local diagram/PDF tools; `pandoc docs/architecture/limitplane-hld-excalidraw.md -f gfm -t html -o /tmp/limitplane-hld-check.html`; verified artifact sizes/key labels and Git diff/status; `date '+%Y-%m-%d %H:%M %Z'`
+- Reason: Build an evidence-based HLD showing every implemented logical service, end-to-end request and data movement, persistence, external integrations, important architectural features, and an exact Excalidraw reconstruction method.
+- Result: Success. Created one master HLD, a protected-request flow, a storage/data flow, manual canvas instructions, numbered arrows, service inventory, architecture deep dives, three-minute narration, and expected interviewer follow-ups. Markdown conversion validation passed.
+- Files changed: `docs/architecture/limitplane-hld-excalidraw.md`, `docs/architecture/limitplane-master-hld.mmd`, `docs/architecture/limitplane-request-flow.mmd`, `docs/architecture/limitplane-data-flow.mmd`, `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: Learner needs a complete connected view that remains drawable and explainable in Excalidraw.
+- Revisit later: Import Mermaid into Excalidraw and simplify visual density if the master page becomes crowded.
+
+## 2026-10-27 03:01 IST - HLD Tracker Update
+- Command: none (agent file edit)
+- Reason: Record the diagram artifacts, truth boundaries, teaching outcome, and next explain-back step.
+- Result: Success.
+- Files changed: `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: none
+- Revisit later: Generate the combined Amazon sprint PDF after the interactive architecture review.
+
+## 2026-10-27 - HLD Image Rendering and Preview
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; read current session/progress; attempted `npx --no-install mmdc --version` and stopped it when the local renderer was unavailable; first Mermaid render attempt failed because this CLI version does not support `-w`; inspected `mmdc --help`; rendered the exhaustive HLD to SVG and 7200×2512 PNG; rendered the clean interview HLD, request flow, and data-flow map to high-resolution PNG using Mermaid CLI and local Chrome; inspected dimensions and all images; `open -a Preview .../limitplane-interview-hld.png`
+- Reason: Convert the editable Mermaid architecture sources into actual Excalidraw-style images, visually inspect them, and open the cleaner interview diagram for the learner.
+- Result: Success after replacing the unsupported width option with `--size`. The clean interview HLD opened in Preview. Exhaustive master SVG/PNG, request-flow PNG, and data-flow PNG were also generated successfully.
+- Files changed: `docs/architecture/puppeteer-config.json`, `docs/architecture/limitplane-interview-hld.mmd`, `docs/architecture/limitplane-interview-hld.png`, `docs/architecture/limitplane-master-hld.svg`, `docs/architecture/limitplane-master-hld.png`, `docs/architecture/limitplane-request-flow.png`, `docs/architecture/limitplane-data-flow.png`, HLD guide, `sessions.md`, `progress.md`
+- Dependencies changed: none in the project; Mermaid CLI was downloaded through one-time `npx` execution
+- Learner stuck point: The exhaustive diagram is too wide at chat scale; a cleaner layered interview diagram was created for readable zoom/presentation.
+- Revisit later: Import `limitplane-interview-hld.mmd` through Excalidraw’s Mermaid tool for fully editable shapes.
+
+## 2026-10-27 - HLD Render Tracker Update
+- Command: none (agent file edit)
+- Reason: Record generated image artifacts, the failed legacy width flag, successful render path, and Preview opening.
+- Result: Success.
+- Files changed: HLD guide, `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: none
+- Revisit later: Continue with architecture narration after visual review.
+
+## 2026-10-27 - Fingerprint and Autopilot AI-Boundary Clarification
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; read current session/progress and inspected the exact fingerprint classification, adaptive-lane application, Autopilot rules, AI reviewer prompt/JSON parsing, AI explainer prompt/fallback, server integration, and 20-second review loop with `nl` and `sed`
+- Reason: Answer whether behavior fingerprinting uses AI, what Autopilot does, how it connects to the gateway, what prompts are sent, and whether Zod/schema validation is used.
+- Result: Confirmed three distinct layers: deterministic fingerprinting, deterministic core Autopilot, and optional Groq features. Prompts exist for explainer/reviewer; reviewer uses JSON-object response mode, `JSON.parse`, candidate checks, and duration clamping. No Zod dependency or schema parse is present.
+- Files changed: `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: AI API usage was being conflated with rule-based fingerprinting and Autopilot.
+- Revisit later: Add Zod or JSON Schema validation if the user decides to harden the AI reviewer implementation.
+
+## 2026-10-27 - AI Boundary Tracker Update
+- Command: none (agent file edit)
+- Reason: Preserve the clarified architecture and current learning gap.
+- Result: Success.
+- Files changed: `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: none
+- Revisit later: Explain-back checkpoint.
+
+## 2026-10-27 - Adaptive Token-Bucket Capacity Trace
+- Command: Inspected `src/gateway/fingerprint.js`, `src/gateway/limitPlane.js`, and `src/algorithms/tokenBucketLimiter.js` with numbered source lines.
+- Reason: Explain exactly how a behavior lane changes the live token-bucket capacity.
+- Result: Traced base policy capacity -> lane burst/refill multipliers -> per-request effective values -> token refill/clamp/spend. Identified that lower capacity clamps immediately, higher capacity fills gradually, and response limit/retry timing currently use base rather than effective values.
+- Files changed: `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: Whether adaptive capacity mutates the plan or changes the bucket itself.
+- Revisit later: Ask learner to calculate effective capacity and remaining tokens for one human-to-retry-bug transition.
+
+## 2026-10-27 - Lane Selection and Adaptation Trace
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; inspected `src/gateway/fingerprint.js`, the gateway observe/decision ordering, server wiring, fingerprint unit tests, and current session records with numbered source lines and `rg`.
+- Reason: Explain how request history becomes a behavior label and how that label changes enforcement.
+- Result: Confirmed a 30-event tenant window, six-event warm-up, four derived features, priority-ordered classification rules, and next-request application. Confirmed the separately collected per-IP fingerprint does not currently select the enforced lane.
+- Files changed: `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: How the lane is selected rather than merely how its multiplier changes capacity.
+- Revisit later: Have learner classify three sample traffic patterns and discuss tenant-versus-IP identity tradeoffs.
+
+## 2026-10-27 - Adaptive Window, Priority, and Timing Clarification
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; inspected current learning records plus the fingerprint window/classification and gateway decision/observe ordering with numbered source lines.
+- Reason: Explain why the implementation uses 30 events, why rules are evaluated in priority order, why lane multipliers differ, and whether limiting or labeling occurs first.
+- Result: Clarified that 30 is a tunable responsiveness-versus-stability tradeoff rather than a mathematically required value; normal base limiting remains active during warm-up; each request is decided using the previous label and then updates the label for the next request.
+- Files changed: `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: Temporal ordering between rate-limit enforcement and behavior reclassification.
+- Revisit later: Tune the window and thresholds using labeled traffic/replay tests rather than intuition alone.
+
+## 2026-10-27 - Per-IP Adaptive Enforcement Roadmap Item
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; inspected current learning records, server fingerprint wiring, gateway decision ordering, and README structure with `sed`, `nl`, and `rg`.
+- Reason: Mark per-IP adaptive enforcement as future project work and explain correct lane-selection timing.
+- Result: Added a source TODO and README roadmap item. The planned design retains tenant-wide protection and adds a second per-IP adaptive bucket; no runtime behavior was changed.
+- Files changed: `src/server.js`, `README.md`, `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: Whether lane selection belongs before or after the limiting decision.
+- Revisit later: Implement a two-guard tenant-plus-IP decision contract with trusted-proxy, privacy, IPv6/NAT, and isolation tests.
+
+## 2026-10-27 - Per-IP Adaptive Enforcement Implementation
+- Command: Read the LimitPlane tutor skill and current records; inspected gateway, policy engine, server, Autopilot, proxy CLI, public exports, tests, README, and architecture sources with `nl`, `sed`, and `rg`; ran syntax checks, public-export smoke check, `git diff --check`, and `npm test`; rendered updated interview/master/request-flow diagrams with Mermaid CLI and local Chrome; visually inspected the interview and request-flow PNGs; ran `open -a Preview docs/architecture/limitplane-interview-hld.png`.
+- Reason: Implement the previously documented per-IP adaptive guard, preserve tenant-wide limits, update architecture artifacts, and verify behavior across deployment modes.
+- Result: Added IP-first adaptive burst enforcement, tenant base-plan burst enforcement, scoped audit/decision data and headers, next-request IP learning, IP-scoped Autopilot cooldowns, server/CLI/package wiring, docs, and tests. Final unit result: 65 passed, 0 failed.
+- Files changed: `src/gateway/limitPlane.js`, `src/gateway/automations.js`, `src/server.js`, `src/index.js`, `bin/limitplane.js`, `tests/unit/limitPlane.test.js`, `tests/unit/automations.test.js`, `README.md`, `site/index.html`, architecture guide, three Mermaid sources, three PNGs, master SVG, `sessions.md`, `progress.md`
+- Dependencies changed: none; Mermaid CLI ran through `npx` and was not added to project dependencies
+- Learner stuck point: Correct causal ordering and preventing an IP-scoped block/cooldown from penalizing the whole tenant
+- Revisit later: Trusted-proxy configuration, IP hashing/retention, IPv6 normalization, NAT policy, and distributed shared state for both buckets/fingerprints
+
+## 2026-10-27 - IP Reputation Persistence Clarification
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; inspected the fingerprint map/window/eviction, Autopilot ban storage and expiry, cooldown fast path, post-decision learning, and CLI hot-reload object lifetime with numbered source lines.
+- Reason: Determine whether a previously abusive IP remains known after cooldown, reload, eviction, or process restart.
+- Result: Confirmed fingerprints, bans, storm history, and buckets are in-memory only. Fingerprints survive a cooldown and CLI policy hot reload, but disappear on process restart/deployment or 1,000-client eviction. Active cooldown requests are not added to fingerprint history. Recommended Redis TTL-backed ban, short-term fingerprint, and repeat-offender reputation layers rather than indefinite raw-IP storage.
+- Files changed: `sessions.md`, `progress.md`
+- Dependencies changed: none
+- Learner stuck point: Difference between an expiring ban and retained behavioral reputation.
+- Revisit later: Design Redis key/TTL strategy with normalized, keyed-hash IP identifiers and cross-replica atomicity.
+
+## 2026-10-27 - Redis-backed IP Reputation Implementation
+- Command: Read the LimitPlane tutor skill and current learning state; inspected Git/remotes, Redis modules/tests, gateway/server/CLI wiring, env/docs; searched official Redis documentation for expiration, sorted sets, and client guidance; verified local Redis with `redis-cli ping`; ran `npm ci`; added Redis runtime code with `apply_patch`; ran Node syntax checks, `npm test`, `npm run test:integration`, and `git diff --check`; rendered and inspected all updated Mermaid diagrams; ran two live Redis-mode server smoke tests on port 3107; scanned Redis keys for plaintext IPs; deleted the three explicit disposable smoke keys; generated Markdown/HTML and a 7-page A4 PDF with Pandoc and headless Chrome; validated PDF metadata and visually inspected page one.
+- Reason: Persist IP bans, behavior history, repeat strikes, and token buckets across restarts/replicas while bounding retention and protecting raw IP addresses.
+- Result: Redis mode now activates with `REDIS_URL` + `IP_HASH_SECRET`. Lua provides per-bucket and per-storm atomicity; fingerprints retain 30 events for one idle hour; bans use cooldown TTL; strikes use 24-hour TTL and escalate repeat behavior; complete bucket keys and IP identities use HMAC. Final verification: 70 unit tests and 5 real-Redis integration tests passed, live request returned 200 with tenant/IP headers, and Redis scan contained no plaintext test IP.
+- Files changed: `.env.example`, `README.md`, `bin/limitplane.js`, `site/index.html`, `src/index.js`, `src/server.js`, `src/gateway/limitPlane.js`, `src/gateway/automations.js`, `src/gateway/fingerprint.js`, new Redis runtime/identity/fingerprint/reputation/token-bucket modules, unit/integration tests, architecture sources/images, learning source/HTML/PDF, `sessions.md`, `progress.md`
+- Dependencies changed: `npm ci` restored the already-locked `redis@6.1.0` dependency into ignored `node_modules`; package manifest and lockfile versions did not change
+- Learner stuck point: Persistence without permanent punishment, cross-replica consistency, and privacy-safe Redis identifiers
+- Revisit later: Combined atomic decision across monthly/IP/tenant meters; Redis outage policy and metrics; trusted-proxy validation; canonical IPv6/subnet and shared-NAT policy
+
+## 2026-10-27 - Redis Implementation Corrections
+- Command: Initial `node --check src/gateway/fingerprint.js` exposed a leftover classifier body; corrected with `apply_patch`. First live smoke used `redis-cli --scan --pattern 'lp:*'` and exposed raw IP inside the anonymous tenant bucket key; stopped the server, deleted the three exact smoke keys with `redis-cli DEL`, added whole-key HMAC, reran unit/integration tests and the live smoke, verified `redis-cli --scan --pattern 'lp:*203.0.113.42*'` returned nothing, then deleted the new three exact disposable keys.
+- Reason: Preserve syntax correctness and fulfill the guarantee that raw client IPs never appear in Redis keys.
+- Result: Both issues fixed before commit. Final Redis keys are HMAC-only identifiers. Temporary smoke data was removed and is intentionally unrecoverable.
+- Files changed: `src/gateway/fingerprint.js`, `src/redis/ipIdentity.js`, `src/redis/createRedisIpRuntime.js`, `src/algorithms/redisTokenBucketLimiter.js`, tests, README
+- Dependencies changed: none
+- Learner stuck point: none
+- Revisit later: Add an automated end-to-end assertion that scans an isolated Redis test namespace for raw identifiers.
