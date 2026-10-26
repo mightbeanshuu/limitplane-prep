@@ -1246,3 +1246,12 @@ Build a production-style distributed, multi-tenant rate limiter with Redis/Lua, 
 - Dependencies changed: none
 - Learner stuck point: none
 - Revisit later: Add an automated end-to-end assertion that scans an isolated Redis test namespace for raw identifiers.
+
+## 2026-10-27 - Redis Feature Commit and GitHub Push
+- Command: `git add .env.example README.md bin/limitplane.js progress.md sessions.md site/index.html src tests docs redis_ip_reputation_pattern.pdf`; `git diff --cached --check`; `git commit -m "feat: persist adaptive IP reputation in Redis"`; corrected one stale/trailing-space HLD paragraph with `apply_patch`; `git commit --amend --no-edit`; `git push origin main`
+- Reason: Publish the verified implementation and its learning/architecture artifacts to the isolated Amazon-prep repository without changing the original LimitPlane repository.
+- Result: Success. `origin/main` advanced from `b2d107b` to feature commit `47739f3`. Original `upstream` repository was not pushed or modified.
+- Files changed: Git history only; tracked implementation/docs are contained in `47739f3`
+- Dependencies changed: none
+- Learner stuck point: none
+- Revisit later: Push this tracker-only follow-up commit, then begin atomic multi-guard decision lesson.

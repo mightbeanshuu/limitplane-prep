@@ -647,7 +647,7 @@
 - Next session: Redis-backed shared state design, then monthly/burst atomic ordering
 
 ## Redis-backed IP Reputation and Expiring Shared State
-- Status: Complete; commit/push follows final verification
+- Status: Complete and pushed to `origin/main` in commit `47739f3`
 - Concepts taught: Redis TTLs, HMAC pseudonymous keys, IP normalization, Redis server time, atomic Lua token buckets, expiring fingerprint lists, sorted-set storm windows, repeat strikes, escalating cooldowns, and shared state across replicas
 - Examples used: Five-minute first cooldown; 30-event fingerprint retained for one idle hour; strike retained 24 hours; second storm threshold falls from ten to eight and cooldown doubles
 - Project mapping: `src/redis/ipIdentity.js`, `src/redis/createRedisIpRuntime.js`, `src/algorithms/redisTokenBucketLimiter.js`, `src/gateway/redisFingerprints.js`, `src/gateway/redisIpReputation.js`, gateway/Autopilot/server/CLI wiring, tests, README, and architecture diagrams
