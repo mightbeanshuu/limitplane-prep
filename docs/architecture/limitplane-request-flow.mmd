@@ -18,7 +18,7 @@ flowchart TD
   PASS["14A. Continue to handler/upstream"]
   STOP["14B. Return HTTP 429 + Retry-After"]
   RESP["15. Response returns to client"]
-  REDIS[("Optional Redis + Lua<br/>HMAC IP keys + TTL state")]
+  REDIS[("Optional Redis + Lua<br/>shared monthly + burst limits<br/>HMAC keys + TTL state")]
 
   R --> I --> P --> B
   B -- yes --> BA --> E
@@ -29,6 +29,7 @@ flowchart TD
   MC -- yes --> F
   F --> IP
   F -. fingerprint events .-> REDIS
+  MC -. atomic monthly charge .-> REDIS
   IP -. atomic IP bucket .-> REDIS
   T -. atomic tenant bucket .-> REDIS
   IP -- no --> X

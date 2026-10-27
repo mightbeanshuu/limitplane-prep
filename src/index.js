@@ -23,6 +23,7 @@ export { MonthlyQuotaLimiter } from "./algorithms/monthlyQuotaLimiter.js";
 // The raw muscles, for direct use or benchmarks:
 export { TokenBucketLimiter } from "./algorithms/tokenBucketLimiter.js";
 export { RedisTokenBucketLimiter } from "./algorithms/redisTokenBucketLimiter.js";
+export { RedisMonthlyQuotaLimiter } from "./algorithms/redisMonthlyQuotaLimiter.js";
 export { FixedWindowLimiter } from "./algorithms/fixedWindowLimiter.js";
 export { SlidingWindowCounterLimiter } from "./algorithms/slidingWindowLimiter.js";
 export { SlidingWindowLogLimiter } from "./algorithms/slidingWindowLogLimiter.js";

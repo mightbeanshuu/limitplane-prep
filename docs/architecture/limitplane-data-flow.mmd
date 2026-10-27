@@ -23,12 +23,12 @@ flowchart LR
 
   subgraph VOLATILE["Process-local State"]
     POL[("Shared policy object<br/>tiers + tenant map")]
-    MAPS[("Maps / Sets<br/>buckets, monthly usage,<br/>bans, stats, audit,<br/>fingerprints, visitors")]
+    MAPS[("Maps / Sets<br/>fallback meters and bans,<br/>stats, audit, fingerprints,<br/>visitors")]
   end
 
   subgraph OPTIONAL["Optional Shared Redis Runtime"]
     RP["Redis state adapters"]
-    REDIS[("Redis + Lua<br/>buckets, fingerprints,<br/>bans, storms, strikes<br/>HMAC keys + TTL")]
+    REDIS[("Redis + Lua<br/>monthly + burst buckets,<br/>fingerprints + reputation<br/>HMAC keys + TTL")]
   end
 
   BILL --> TS

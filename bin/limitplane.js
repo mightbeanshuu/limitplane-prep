@@ -142,6 +142,7 @@ function buildGateway(cfg) {
     policy: cfg.policy,
     limiter: redisIpRuntime?.limiter,
     ipLimiter: redisIpRuntime?.limiter,
+    monthly: redisIpRuntime?.monthly,
     automations,
     fingerprints,
     ipFingerprints,
@@ -152,8 +153,8 @@ lp = buildGateway(config);
 
 // ---- 2b. Hot reload: edit the config file, limits change live ---------------
 // Polling watch (watchFile) because it works on every OS and editor. Note the
-// Without Redis, a reload builds fresh burst/monthly meters. With Redis, burst
-// buckets and IP reputation survive; the in-memory monthly meter still resets.
+// Without Redis, a reload builds fresh burst/monthly meters. With Redis, the
+// shared monthly meter, burst buckets, and IP reputation all survive.
 if (configFromFile) {
   watchFile(configPath, { interval: 2000 }, () => {
     try {

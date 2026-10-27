@@ -168,7 +168,7 @@ setInterval(() => {
 // Shared monthly meter: the gateway AND the token-metering proxy charge the
 // same per-tenant monthly budget, so LLM token spend and normal request units
 // draw down one pool.
-const monthlyMeter = new MonthlyQuotaLimiter();
+const monthlyMeter = redisIpRuntime?.monthly ?? new MonthlyQuotaLimiter();
 const lp = createLimitPlane({
   policy,
   limiter: redisIpRuntime?.limiter,
@@ -480,7 +480,7 @@ const server = http.createServer(async (req, res) => {
     const plan = policy.tiers[tenant.tier];
     let over = false;
     if (plan?.monthlyQuota !== undefined) {
-      const m = monthlyMeter.check({ key: `${tenant.tenantId}:${tenant.tier}:monthly`, quota: plan.monthlyQuota, cost: result.units });
+      const m = await monthlyMeter.check({ key: `${tenant.tenantId}:${tenant.tier}:monthly`, quota: plan.monthlyQuota, cost: result.units });
       over = !m.allowed;
       if (over) memory.remember(`${when(Date.now())} ${tenant.tenantId} token budget exhausted on /v1/ai/proxy (${result.usage.totalTokens} tokens)`, { kind: "block" });
     }

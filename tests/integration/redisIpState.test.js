@@ -1,6 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createClient } from "redis";
+import { RedisMonthlyQuotaLimiter } from "../../src/algorithms/redisMonthlyQuotaLimiter.js";
 import { RedisTokenBucketLimiter } from "../../src/algorithms/redisTokenBucketLimiter.js";
 import { createRedisFingerprints } from "../../src/gateway/redisFingerprints.js";
 import { createRedisIpReputation } from "../../src/gateway/redisIpReputation.js";
@@ -35,6 +36,32 @@ test("Redis token bucket is atomic, expiring, and shared across limiter instance
   assert.equal((await secondProcess.check({ key, capacity: 2, refillRatePerMs: 0.000001 })).allowed, false);
   assert.ok(await client.pTTL(firstProcess.storageKey(key)) > 0);
   assert.doesNotMatch(firstProcess.storageKey(key), /203\.0\.113\.42/);
+});
+
+test("monthly quota is atomic and shared across gateway replicas", async () => {
+  const monthlyPrefix = `${prefix}:monthly`;
+  const keyHasher = createKeyHasher({ secret: "integration-secret", namespace: "monthly" });
+  const firstReplica = new RedisMonthlyQuotaLimiter({ client, prefix: monthlyPrefix, keyHasher });
+  const secondReplica = new RedisMonthlyQuotaLimiter({ client, prefix: monthlyPrefix, keyHasher });
+  const key = `acme:pro:monthly`;
+  const storageKey = firstReplica.storageKey(key);
+  await client.del(storageKey);
+
+  const results = await Promise.all(
+    Array.from({ length: 20 }, (_, i) =>
+      (i % 2 === 0 ? firstReplica : secondReplica).check({ key, quota: 10, cost: 1 })
+    )
+  );
+
+  assert.equal(results.filter((result) => result.allowed).length, 10);
+  const blocked = await secondReplica.check({ key, quota: 10, cost: 1 });
+  assert.deepEqual({ allowed: blocked.allowed, used: blocked.used, remaining: blocked.remaining }, {
+    allowed: false,
+    used: 10,
+    remaining: 0,
+  });
+  assert.ok(await client.pTTL(storageKey) > 0);
+  assert.doesNotMatch(storageKey, /acme/);
 });
 
 test("fingerprint history survives a new store instance and never stores the raw IP", async () => {

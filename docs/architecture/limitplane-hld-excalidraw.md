@@ -8,12 +8,12 @@ LimitPlane is one Node.js process with logically separate modules. The boxes ins
 
 The default running gateway uses:
 
-- in-memory `Map` and `Set` state for burst buckets, monthly usage, bans, audit events, statistics, fingerprints, visitors, and live connections;
+- in-memory `Map` and `Set` fallback state for meters, bans, audit events, statistics, fingerprints, visitors, and live connections;
 - `.tenants.json` for tenants and tiers;
 - `.orgs.json` for users, organizations, roles, and attached sites;
 - `.memory.jsonl` for append-only incident history.
 
-There is no PostgreSQL or MongoDB in this snapshot. Redis mode is optional: when `REDIS_URL` and `IP_HASH_SECRET` are present, Lua-backed tenant/IP token buckets plus HMAC-keyed fingerprint, ban, storm, and strike state are shared across replicas with bounded TTLs. Without those variables, the default runtime remains in memory. The older Redis fixed-window examples remain separately integration-tested teaching implementations.
+There is no PostgreSQL or MongoDB in this snapshot. Redis mode is optional: when `REDIS_URL` and `IP_HASH_SECRET` are present, Lua-backed monthly and tenant/IP burst meters plus HMAC-keyed fingerprint, ban, storm, and strike state are shared across replicas with bounded TTLs. Without those variables, the default runtime remains in memory. The older Redis fixed-window examples remain separately integration-tested teaching implementations.
 
 ## Fastest way to get this into Excalidraw
 
@@ -151,7 +151,7 @@ Use yellow database cylinders:
 
 Use a red database cylinder:
 
-5. **Redis + Lua — optional shared runtime for token buckets, HMAC-keyed IP fingerprints, cooldowns, storms, and strikes with TTLs**
+5. **Redis + Lua — optional shared runtime for monthly/burst meters, HMAC-keyed IP fingerprints, cooldowns, storms, and strikes with TTLs**
 
 ### Zone 8 — External integrations
 
@@ -198,7 +198,7 @@ Use these labels directly on Excalidraw arrows.
 30. AI token proxy → Groq: **prompt / completion**
 31. Groq → AI token proxy: **response + actual token usage**
 32. AI token proxy → monthly meter: **reconcile actual units**
-33. Middleware ⇢ Redis: **dashed: production-compatible distributed limiter required**
+33. Monthly/IP/tenant meters ⇢ Redis: **dashed: optional shared Lua enforcement across replicas**
 
 ## Main request flow
 
@@ -229,7 +229,7 @@ The full flow is ready to import from [limitplane-request-flow.mmd](./limitplane
 | `limitPlane.js` | Coordinates identity, quota, per-IP adaptive burst, tenant aggregate burst, audit, and HTTP response | Request metadata | Scoped decision object / tenant+IP headers / 429 | Critical path |
 | `policyEngine.js` | Converts identity and route into limiter instructions | API key, IP, route, policy | Key, capacity, refill, cost, quota | Critical path |
 | `tokenBucketLimiter.js` | Controls short-term bursts | Tenant or tenant+IP key, capacity, refill, cost | Allowed and remaining | Used for tenant and per-IP guards |
-| `monthlyQuotaLimiter.js` | Enforces calendar-month plan units | Monthly key, quota, cost | Used, remaining, reset | Default monthly meter |
+| `monthlyQuotaLimiter.js` / `redisMonthlyQuotaLimiter.js` | Enforces calendar-month plan units | Monthly key, quota, cost | Used, remaining, reset | Local fallback / shared Redis mode |
 | `auditLog.js` | Bounded decision diary | Decision facts | Recent events | Active event consumer |
 | `automations.js` | Quota alerts, upgrade nudges, cooldowns, optional AI review | Decision events | Actions and ban state | Active |
 | `fingerprint.js` | Classifies human, agent, crawler, retry bug | Recent request timing/routes | Adaptive lane | Active |
@@ -248,7 +248,7 @@ The full flow is ready to import from [limitplane-request-flow.mmd](./limitplane
 | `nsfwStub.js` | Deterministic expensive-route demo | Text | Label/confidence | Active demo handler |
 | Fixed/sliding/leaky algorithms | Alternative local limiter strategies | Key + algorithm parameters | Allow/block | Implemented library modules |
 | Redis fixed-window modules | Distributed counters with Redis commands/Lua | Redis client + key/window | Allow/block | Implemented and tested separately |
-| Redis IP runtime | Persists atomic buckets and expiring IP reputation across replicas/restarts | `REDIS_URL`, `IP_HASH_SECRET`, request decisions | Shared bucket/fingerprint/ban/strike state | Optional active runtime |
+| Redis IP runtime | Persists atomic monthly/burst enforcement and expiring IP reputation across replicas/restarts | `REDIS_URL`, `IP_HASH_SECRET`, request decisions | Shared quota/bucket/fingerprint/ban/strike state | Optional active runtime |
 
 ## Data ownership
 
@@ -265,7 +265,7 @@ Tradeoff: this is simple and fast in one process, but multiple replicas would no
 In the default in-memory mode, the following disappears on restart and is different in every replica:
 
 - token buckets;
-- monthly meters;
+- monthly meters when Redis mode is disabled;
 - Autopilot bans and deduplication;
 - audit events;
 - stats;
@@ -273,7 +273,7 @@ In the default in-memory mode, the following disappears on restart and is differ
 - visitor map;
 - SSE clients and WebSocket connections.
 
-When Redis mode is enabled, token buckets plus HMAC-keyed IP fingerprints, bans, storms, and repeat strikes are shared and TTL-bounded. Monthly meters, audit, stats, visitor maps, and live connections remain process-local. At 100× scale, move durable business records to PostgreSQL and event history to a log/analytics store.
+When Redis mode is enabled, monthly usage, token buckets, HMAC-keyed IP fingerprints, bans, storms, and repeat strikes are shared and TTL-bounded. Audit, stats, visitor maps, and live connections remain process-local because they do not decide request admission. At 100× scale, move durable business records to PostgreSQL and event history to a log/analytics store.
 
 ### Local file persistence
 
@@ -355,12 +355,12 @@ Each script is atomic by itself, but the complete monthly → IP bucket → tena
 >
 > Every decision becomes one in-process event that updates the audit diary, statistics, fingerprints, Autopilot, incident memory, visitor tracking, and WebSocket/SSE dashboard. The control plane contains JWT/RBAC, organizations, admin actions, and Stripe billing. A verified Stripe webhook updates the shared tenant map, so the next request immediately uses the new tier.
 >
-> The demo persists tenants, organizations, and incident history in local JSON/JSONL files. Its default decision state remains in memory, but optional Redis mode shares Lua token buckets plus HMAC-keyed IP fingerprints, bans, storms, and strikes with bounded TTLs across replicas. Monthly usage, business data, and event history still need production-grade shared stores; the next limiter improvement is one atomic multi-guard reservation contract.”
+> The demo persists tenants, organizations, and incident history in local JSON/JSONL files. Its default decision state remains in memory, but optional Redis mode shares Lua-backed monthly and burst enforcement plus HMAC-keyed IP fingerprints, bans, storms, and strikes with bounded TTLs across replicas. Business data and event history still need production-grade shared stores; the next limiter improvement is one atomic multi-guard reservation contract.”
 
 ## Likely HLD follow-ups
 
-1. **What fails if the process restarts?** In default mode all decision state resets. In Redis mode buckets and IP reputation survive, while monthly counters, audit, stats, visitors, and live connections still reset.
-2. **What happens with two replicas?** Default in-memory mode makes independent decisions. Redis mode shares bucket and IP reputation state, but other process-local meters and dashboards still diverge.
+1. **What fails if the process restarts?** In default mode all decision state resets. In Redis mode monthly/burst enforcement and IP reputation survive, while audit, stats, visitors, and live connections still reset.
+2. **What happens with two replicas?** Default in-memory mode makes independent decisions. Redis mode shares the admission-control state; replica-local dashboards can still show different partial views.
 3. **What if Redis fails?** Decide fail-open or fail-closed per route; emit a degraded-mode metric and use a bounded local emergency limiter.
 4. **How do you prevent hot keys?** Use tenant/route partitioning, Redis Cluster hash strategy, local token leasing, and sharded policies.
 5. **How do you handle dynamic URL IDs?** Normalize routes to templates before constructing keys.

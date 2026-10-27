@@ -245,8 +245,8 @@ only — never request bodies, never secrets. See `.env.example`.
 
 **Hot config reload (proxy).** In config-file mode, `bin/limitplane.js`
 watches the file and swaps in edited policy live (bad JSON keeps the old
-policy and says so). With Redis enabled, burst buckets and IP reputation
-survive reloads; without it, burst meters reset. The monthly meter is local.
+policy and says so). With Redis enabled, monthly usage, burst buckets, and IP
+reputation survive reloads and remain consistent across gateway replicas.
 
 ## How to read this codebase (start here when you come back later)
 
@@ -315,11 +315,12 @@ node --env-file=.env src/server.js
 
 If `REDIS_URL` is absent, LimitPlane uses its original in-memory mode. If it is
 present, `IP_HASH_SECRET` is mandatory and startup fails clearly when Redis
-cannot connect. Redis mode uses Lua so each individual token-bucket decision
-and each storm/strike transition is atomic.
+cannot connect. Redis mode uses Lua so each monthly charge, individual
+token-bucket decision, and storm/strike transition is atomic across replicas.
 
 | Redis key | Contents | TTL |
 |---|---|---:|
+| `lp:monthly:<key-HMAC>` | Shared calendar-month usage | First instant of next UTC month |
 | `lp:ban:<subject-HMAC>` | Active IP cooldown | Remaining cooldown |
 | `lp:fingerprint:<IP-HMAC>` | Latest 30 `{at, route, allowed}` events | 60 minutes after activity |
 | `lp:strikes:<subject-HMAC>` | Repeat-offender count | 24 hours |

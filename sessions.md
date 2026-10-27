@@ -665,3 +665,171 @@
 - Stuck points: Initial classifier extraction left the old body and failed syntax checking; corrected before tests. First live smoke exposed raw IP through an anonymous tenant bucket key; complete bucket-key HMAC fixed it and the second smoke confirmed zero plaintext IP keys.
 - Revision PDF: `redis_ip_reputation_pattern.pdf` (7 A4 pages, rendered and visually inspected)
 - Next session: Atomic multi-guard decision — monthly quota, IP bucket, and tenant bucket reserve/commit/rollback
+## 2026-10-27 - Deep End-to-End Runtime Flow
+
+- **Mode:** Interview revision / architecture walkthrough
+- **Topic:** Exact lifecycle of a LimitPlane request
+- **Covered:** Startup backend selection, authentication fallback, policy and request cost, active cooldown, monthly quota, tenant and IP behavior lanes, IP-first token bucket, tenant bucket, decision scope, audit, adaptive learning for the next request, autopilot reputation, Redis keys/TTLs, live telemetry, and HTTP response.
+- **Important correction retained:** Lane selection happens before the current rate-limit decision and is based on earlier events; the current outcome updates the lane used by the next request.
+- **Known architectural caveat:** Monthly quota and the IP bucket can be charged before a later limiter rejects because the complete multi-limit operation is not yet one atomic transaction.
+- **Next lesson:** Atomic composite limiting with a single Redis Lua operation or reservation/commit/rollback design.
+
+## 2026-10-27 - Atomic Composite Decision, Part 1
+- Status: In progress; concept lesson started, implementation not requested or changed
+- Concepts taught: Operation-level versus workflow-level atomicity, partial spending, all-or-nothing commit, dry-run evaluation, deterministic denial priority, single Redis Lua transaction, return contract, Redis Cluster hash slots, and failure behavior
+- Examples used: Monthly quota and IP bucket approve and spend, followed by a tenant-bucket rejection
+- Project mapping: `src/gateway/limitPlane.js`, `src/algorithms/redisTokenBucketLimiter.js`, `src/algorithms/monthlyQuotaLimiter.js`
+- Doubts asked: Whether a rejected request should consume monthly quota or IP tokens
+- Answers given: No request cost should be committed unless every required guard approves; observation and abuse evidence are separate side effects that may still be recorded
+- Learner gaps noticed: Operation-level Lua atomicity can be mistaken for atomicity of the entire request workflow
+- Grasp-speed signal: Pending explain-back checkpoint
+- Adaptation used: One numeric failure trace followed by a prepare/evaluate/commit mental model
+- Learning route: Interview Prep
+- Prerequisite check: Prior sessions show working knowledge of Redis, token buckets, monthly quotas, and IP-first enforcement
+- Small terms explained: atomic, transaction, partial spend, dry run, commit, rollback, reservation, hash slot
+- Recurring difficult topics: Operation-level versus workflow-level atomicity
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None yet
+- Revision PDF: Deferred until this lesson and its checkpoint are complete
+- Next session: Trace a composite Lua decision, select the implementation strategy, then cover concurrency/failure tests
+
+## 2026-10-27 - Current Architecture Diagram Correction
+- Status: Complete for the current-state request flow
+- Concepts taught: Data plane versus control plane, API-key identity versus JWT administration, optional Redis runtime, cooldown short-circuit side effects, tenant telemetry lane versus enforced IP lane, backend-dependent bucket atomicity, and sequential partial spending
+- Examples used: A cooldown request that is audited but not learned; a tenant-bucket rejection after monthly and IP spending
+- Project mapping: `src/server.js`, `src/gateway/limitPlane.js`, `src/gateway/auditLog.js`, `src/redis/createRedisIpRuntime.js`
+- Doubts asked: Whether the learner's nine-stage top-to-bottom architecture diagram exactly matches the current project
+- Answers given: The high-level structure is correct, but several details needed qualification; a corrected current-state diagram was produced
+- Learner gaps noticed: Diagram labels can accidentally present optional deployment behavior as unconditional behavior
+- Grasp-speed signal: Learner can reconstruct the full flow and is now checking it for implementation accuracy
+- Adaptation used: Preserved the learner's numbered-box format and inserted exact branches and caveats
+- Learning route: Interview Prep
+- Prerequisite check: Full request flow, Redis persistence, and adaptive lanes have already been covered
+- Small terms explained: data plane, control plane, short-circuit, backend-dependent, partial spend
+- Recurring difficult topics: Current implementation versus proposed production architecture
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Existing Redis pattern PDF remains current; composite-atomic lesson PDF is deferred until that lesson is complete
+- Next session: Contrast this current-state diagram with the future single-composite-Lua diagram
+
+## 2026-10-27 - Revised Fundamentals: Tenant + Per-IP Enforcement
+- Status: Teaching block prepared; learner explain-back pending
+- Concepts taught: Cost-aware limiting, monthly versus burst protection, per-IP adaptive bucket, tenant aggregate bucket, IP-first ordering, select-decide-learn, deterministic classification, lane multipliers, HMAC Redis identity, TTL-based forgiveness, scoped storm cooldowns, and current production gaps
+- Examples used: A retry-bug IP and a human IP sharing one tenant and one expensive route
+- Project mapping: `src/gateway/limitPlane.js`, `src/gateway/fingerprint.js`, `src/gateway/automations.js`, `src/algorithms/redisTokenBucketLimiter.js`, `src/gateway/redisFingerprints.js`, `src/gateway/redisIpReputation.js`, `src/redis/createRedisIpRuntime.js`
+- Doubts asked: How the newly implemented IP layer changes the previously learned fundamentals
+- Answers given: The IP adaptive bucket isolates a visitor while the tenant base bucket preserves aggregate plan protection; both must approve, and Redis mode shares bounded pseudonymous state across replicas
+- Learner gaps noticed: Need one unified mental model joining the original token-bucket lesson with adaptive per-IP enforcement and Redis reputation
+- Grasp-speed signal: Pending checkpoint
+- Adaptation used: Before-versus-now comparison, one numeric two-IP trace, exact execution sequence, and interview-ready summary
+- Learning route: Interview Prep
+- Prerequisite check: Learner already understands cost classes and the basic token-bucket coin-jar model
+- Small terms explained: aggregate, adaptive, guard, HMAC, TTL, scope, logical key, physical Redis key
+- Recurring difficult topics: Current behavior versus future atomic composite behavior
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None yet
+- Revision PDF: Existing `redis_ip_reputation_pattern.pdf` covers the implemented IP/Redis block; no new PDF until the explain-back completes this revision session
+- Next session: Explain-back checkpoint, then continue atomic composite limiting from the current partial-spend bug
+
+## 2026-10-27 - Per-IP Isolation Does Not Guarantee Sibling Capacity
+- Status: Clarified; explain-back pending
+- Concepts taught: One adaptive bucket per IP and route, one shared tenant bucket per tenant and route, individual isolation versus aggregate enforcement, and the absence of hard per-IP fairness reservations
+- Examples used: IP-A and IP-B each passing their own bucket but competing for Acme's shared tenant bucket
+- Project mapping: `src/gateway/limitPlane.js`
+- Doubts asked: Whether all IPs receive separate adaptive buckets and how a well-behaved IP can still be blocked by traffic from other IPs
+- Answers given: Yes, each tracked IP gets its own adaptive bucket; yes, other IPs can collectively exhaust the shared tenant bucket. This is intentional plan enforcement, although strict fairness would require an additional scheduling or reservation mechanism.
+- Learner gaps noticed: Isolation was being interpreted as a guaranteed private share of tenant capacity
+- Grasp-speed signal: Strong—learner identified the remaining noisy-neighbor behavior inside a tenant
+- Adaptation used: Separated the personal gate from the shared account gate and traced two numerical scenarios
+- Learning route: Interview Prep
+- Prerequisite check: Learner understands token costs and the two-bucket request order
+- Small terms explained: isolation, aggregate cap, reservation, fairness, noisy neighbor
+- Recurring difficult topics: Protection versus fairness guarantees
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Covered by the ongoing revised-fundamentals session
+- Next session: Confirm the two-gate result, then resume atomic composite limiting
+
+## 2026-10-27 - What GenAI Does Versus Route Policy and Autopilot
+- Status: Clarified; checkpoint pending
+- Concepts taught: Static route pricing, synchronous rate-limit enforcement, event-driven deterministic automation, asynchronous GenAI explanation/review, RAG grounding, and token-usage reconciliation
+- Examples used: A heavy route costs five before execution; ten IP burst blocks create a deterministic cooldown; Groq later explains the action or reviews prefiltered suspects
+- Project mapping: `src/gateway/policyEngine.js`, `src/gateway/limitPlane.js`, `src/gateway/automations.js`, `src/ai/aiExplainer.js`, `src/ai/tokenMeter.js`, `src/ai/memoryStore.js`, `src/server.js`
+- Doubts asked: If route policy decides request cost, what is Autopilot and where is generative AI used?
+- Answers given: Policy prices requests, limiters decide them, Autopilot reacts to decision patterns, and Groq optionally explains actions, reviews suspicious tenants, answers grounded operations questions, and powers the metered AI proxy
+- Learner gaps noticed: Request-time policy decisions and post-decision operational automation were being combined into one concept
+- Grasp-speed signal: Learner is testing component boundaries rather than memorizing feature names
+- Adaptation used: Four-role analogy plus a critical-path versus asynchronous-path diagram
+- Learning route: Interview Prep
+- Prerequisite check: Learner understands route cost classes and the IP/tenant bucket flow
+- Small terms explained: critical path, event-driven, prefilter, guardrail, RAG, reconciliation
+- Recurring difficult topics: Deterministic core versus optional AI layer
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Covered by the ongoing revised-fundamentals session
+- Next session: Explain-back, then resume atomic composite limiting
+
+## 2026-10-27 - Amazon Interview Value and RAG Verification
+- Status: Evidence-backed evaluation complete; candidate pitch practice pending
+- Concepts taught: Project impressiveness versus AI buzzwords, defendable GenAI boundaries, lightweight RAG stages, evidence-backed resume framing, and production caveats
+- Examples used: Incident event -> JSONL document -> TF-IDF/cosine retrieval -> live-state/history prompt -> Groq answer
+- Project mapping: `src/ai/memoryStore.js`, `/v1/ai/chat` in `src/server.js`, `src/ai/aiExplainer.js`, `src/gateway/automations.js`, Redis/Lua enforcement modules
+- Doubts asked: Whether LimitPlane is impressive for Amazon interviews and whether RAG is truly used
+- Answers given: Yes, it can be a strong systems-plus-GenAI project when presented through mechanisms, tradeoffs, tests, and ownership; yes, RAG is implemented using deterministic TF-IDF retrieval and Groq generation, but it should not be described as neural/vector-database RAG
+- Learner gaps noticed: Risk of using the labels AI and RAG without stating what is deterministic, what calls the model, and what remains prototype-level
+- Grasp-speed signal: Learner is calibrating resume positioning against implemented evidence
+- Adaptation used: Verdict, evidence boundary, impressive points, weak points, and an interview-ready claim
+- Learning route: Interview Prep
+- Prerequisite check: Learner understands policy, Autopilot, and Groq boundaries
+- Small terms explained: chunk, retrieval, TF-IDF, cosine similarity, grounding, generation, vector database
+- Recurring difficult topics: Accurate claim strength versus overclaiming
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Covered by the ongoing revised-fundamentals/interview session
+- Next session: Candidate gives a 30-second project pitch; then probe RAG mechanics and resume claims
+
+## 2026-10-27 - What Is Distributed and What RAG Changes
+- Status: Foundations explained; learner checkpoint pending
+- Concepts taught: Multiple replicas, shared versus local state, consistency, Redis single source of truth, Lua atomicity, hybrid-distributed boundaries, retrieval-augmented generation, TF-IDF, cosine similarity, grounding, and hallucination reduction
+- Examples used: Three gateway replicas accidentally providing three independent ten-token buckets; an operator asking why Acme was blocked yesterday before and after relevant incident retrieval
+- Project mapping: `src/redis/createRedisIpRuntime.js`, `src/algorithms/redisTokenBucketLimiter.js`, `src/gateway/redisFingerprints.js`, `src/gateway/redisIpReputation.js`, `src/ai/memoryStore.js`, `/v1/ai/chat` in `src/server.js`
+- Doubts asked: How LimitPlane is distributed, what is distributed, why RAG is used, and what happens before and after RAG
+- Answers given: Redis-backed burst and IP-reputation state is shared across replicas, while several other components remain local; RAG retrieves relevant project facts before generation so the LLM can answer from gateway history rather than only pretrained knowledge or current state
+- Learner gaps noticed: Needed concrete separation between distributing computation, sharing state, and augmenting an LLM prompt
+- Grasp-speed signal: Pending explain-back
+- Adaptation used: Three-replica token example and one before/after RAG incident question
+- Learning route: Interview Prep
+- Prerequisite check: Learner understands one-process token buckets and basic LLM prompting
+- Small terms explained: replica, load balancer, shared state, consistency, atomic, retrieve, augment, generate, TF-IDF, cosine similarity
+- Recurring difficult topics: Distributed-state boundaries; deterministic retrieval versus LLM generation
+- Commands run: See `progress.md`
+- Files changed: `sessions.md`, `progress.md`
+- Stuck points: None
+- Revision PDF: Covered by the ongoing revised-fundamentals/interview session
+- Next session: Explain-back, then atomic composite limiting
+
+## 2026-10-27 - Multi-Replica Admission State Completed
+- Status: Implemented and verified; GitHub push pending in this turn
+- Concepts taught: Horizontally scaled gateway replicas, shared admission state, atomic Redis monthly accounting, UTC month keys, expiry at billing reset, and local fallback compatibility
+- Examples used: Two independent limiter instances concurrently issuing twenty one-unit charges against a shared quota of ten
+- Project mapping: `src/algorithms/redisMonthlyQuotaLimiter.js`, `src/redis/createRedisIpRuntime.js`, `src/gateway/limitPlane.js`, `src/server.js`, `bin/limitplane.js`, Redis integration tests, README, and architecture diagrams
+- Doubts asked: Whether multiple gateway replicas are supported and what minimum feature is needed to credibly describe the project as distributed
+- Answers given: Redis mode already shared burst and IP-reputation state; adding a shared atomic monthly meter makes core quota and burst enforcement consistent across replicas, while control-plane and observability state remains partly local
+- Learner gaps noticed: Distributed enforcement was being conflated with distributing every dashboard and audit structure
+- Grasp-speed signal: Learner chose a deliberately small scope instead of expanding into unrelated infrastructure
+- Adaptation used: Closed only the enforcement-state gap and retained zero-config in-memory fallback
+- Learning route: Interview Prep
+- Prerequisite check: Learner understands replicas, shared Redis, and Lua atomicity
+- Small terms explained: horizontal scaling, admission state, UTC month key, atomic check-and-spend
+- Recurring difficult topics: Operation-level versus full-workflow atomicity
+- Commands run: See `progress.md`
+- Files changed: See `progress.md`
+- Stuck points: None
+- Revision PDF: Existing Redis pattern PDF remains the current revision artifact; this small extension is documented in README/HLD and the ongoing session tracker
+- Next session: Composite monthly + IP + tenant Lua decision

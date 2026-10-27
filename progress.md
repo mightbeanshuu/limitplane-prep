@@ -1255,3 +1255,83 @@ Build a production-style distributed, multi-tenant rate limiter with Redis/Lua, 
 - Dependencies changed: none
 - Learner stuck point: none
 - Revisit later: Push this tracker-only follow-up commit, then begin atomic multi-guard decision lesson.
+## 2026-10-27 - Complete Request-Lifecycle Flowchart
+
+- **Command:** Reconstructed the end-to-end runtime path from the implemented gateway, IP fingerprinting, Redis token bucket, Redis reputation, automation, and response behavior.
+- **Reason:** The learner requested one deep, visual, interview-ready flowchart showing exactly what happens to a request.
+- **Result:** Prepared an in-chat diagram covering identity, policy resolution, cooldown short-circuit, monthly quota, previous-lane selection, IP-first and tenant-second limiting, audit/learning, autopilot, Redis persistence, and the current partial-spend caveat.
+- **Files changed:** `progress.md`, `sessions.md`
+- **Verification:** Diagram order was checked against the current implementation semantics; no application code was changed.
+- **Next action:** Use the diagram to trace concrete request examples, then study atomic multi-limit accounting as the next architecture improvement.
+
+## 2026-10-27 - Atomic Composite Limiting Lesson Started
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; inspected the original and prep learning records with a shell loop and `tail -n 100`; inspected `src/algorithms/redisTokenBucketLimiter.js`, `src/algorithms/monthlyQuotaLimiter.js`, and `src/gateway/limitPlane.js` with `nl`/`sed`; ran `git status --short`.
+- Reason: Teach why individually atomic Redis operations do not make the complete monthly -> IP -> tenant workflow atomic, and introduce an all-or-nothing composite decision.
+- Result: Confirmed the current partial-spend sequence and prepared an interview-focused lesson covering transaction semantics, a single Lua decision, denial priority, Redis Cluster constraints, failure policy, and testing.
+- Files changed: `progress.md`, `sessions.md`
+- Dependencies changed: none
+- Learner stuck point: Distinguishing operation-level atomicity from workflow-level atomicity.
+- Revisit later: Ask the learner to trace one denied request, then compare single Lua, rollback, and reservation approaches before implementation.
+
+## 2026-10-27 - Architecture Flow Accuracy Audit
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; `tail -n 80 sessions.md`; `tail -n 80 progress.md`; searched architecture symbols with `rg -n`; inspected `src/server.js`, `src/gateway/limitPlane.js`, `src/gateway/auditLog.js`, and `src/redis/createRedisIpRuntime.js` with `nl -ba` and `sed`.
+- Reason: Validate the learner's top-to-bottom architecture diagram against the current implementation and replace ambiguous or incorrect steps.
+- Result: Confirmed the main flow and corrected Redis optionality, local-versus-Redis cooldown sources, control-plane JWT routing, lane timing, early-cooldown fan-out, backend-dependent token buckets, and the sequential partial-spend caveat.
+- Files changed: `progress.md`, `sessions.md`
+- Dependencies changed: none
+- Learner stuck point: Compressing an implementation into a diagram without accidentally implying that all requests use JWT, all state is Redis-backed, or the three spending guards form one transaction.
+- Revisit later: Use the corrected current-state diagram as the baseline before drawing the proposed composite-Lua future state.
+
+## 2026-10-27 - Fundamentals Revised for Per-IP Architecture
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; read current learning records; inspected `src/gateway/limitPlane.js`, `src/gateway/fingerprint.js`, `src/redis/createRedisIpRuntime.js`, and Git status with `nl`, `sed`, and `tail`.
+- Reason: Replace the learner's original single-bucket fundamentals with the implemented tenant-plus-per-IP adaptive architecture before advancing.
+- Result: Prepared a complete revision covering two-bucket responsibilities, IP-first enforcement, select-decide-learn timing, behavior rules and multipliers, Redis/HMAC/TTL state, scoped Autopilot cooldowns, response metadata, concrete traffic traces, limitations, and interview framing.
+- Files changed: `progress.md`, `sessions.md`
+- Dependencies changed: none
+- Learner stuck point: Integrating the new per-IP feature into the original project mental model without confusing identity, lane selection, bucket enforcement, and reputation persistence.
+- Revisit later: Use the learner's explain-back to confirm the two-guard model, then resume the atomic composite decision lesson.
+
+## 2026-10-27 - Per-IP Isolation Versus Tenant Fairness Clarification
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; read current learning records; inspected the two-guard calculation and IP-first enforcement in `src/gateway/limitPlane.js` with numbered lines.
+- Reason: Answer whether every IP receives an adaptive bucket and whether legitimate IPs can still be blocked after other IPs consume the shared tenant bucket.
+- Result: Clarified that every observed IP has a separate route-scoped adaptive bucket, while every IP in the tenant also competes for the same tenant-route aggregate bucket. Per-IP enforcement limits individual domination but does not reserve capacity or guarantee fairness among sibling IPs.
+- Files changed: `progress.md`, `sessions.md`
+- Dependencies changed: none
+- Learner stuck point: Difference between isolating an individual offender and guaranteeing capacity for every legitimate visitor.
+- Revisit later: Optional fairness extensions such as authenticated-user buckets, per-IP caps below tenant capacity, weighted fair queuing, concurrency limits, or reserved capacity.
+
+## 2026-10-27 - Route Policy, Autopilot, and GenAI Boundary
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; read current learning records; searched GenAI wiring with `rg`; inspected `src/ai/aiExplainer.js`, `src/gateway/automations.js`, the AI-review timer and RAG chat in `src/server.js`, `src/ai/tokenMeter.js`, and `src/ai/memoryStore.js` with numbered lines.
+- Reason: Explain what GenAI actually does when route policy already determines request cost and the token buckets make immediate allow/block decisions.
+- Result: Separated route policy, limiter, fingerprint, deterministic Autopilot, AI explainer, periodic AI reviewer, RAG operations chat, and token-meter proxy; confirmed Groq's OpenAI-compatible API with `llama-3.3-70b-versatile`, prompt-based JSON for review, manual validation, and no Zod.
+- Files changed: `progress.md`, `sessions.md`
+- Dependencies changed: none
+- Learner stuck point: Autopilot was being interpreted as either the route policy or as a fully GenAI-driven request limiter.
+- Revisit later: Discuss whether tenant-level AI autobans should be shadow-only or require operator approval before production use.
+
+## 2026-10-27 - Amazon Project Strength and RAG Evidence Review
+- Command: Read the LimitPlane tutor and resume-interview skills; read the project drill playbook; inspected current learning records, `src/ai/memoryStore.js`, the `/v1/ai/chat` path in `src/server.js`, and README AI/RAG claims with `nl` and `rg`.
+- Reason: Evaluate whether LimitPlane is a defensible GenAI project for an Amazon interview and verify whether RAG is actually implemented.
+- Result: Confirmed a real lightweight RAG pipeline: notable events become JSONL documents, TF-IDF vectors support cosine-similarity retrieval, top historical matches plus live gateway state ground a Groq `llama-3.3-70b-versatile` response. Identified honest boundaries: no neural embeddings/vector database, local JSONL storage, and a live-context tenant-filtering gap for the `user` role.
+- Files changed: `progress.md`, `sessions.md`
+- Dependencies changed: none
+- Learner stuck point: Whether the project qualifies as AI/RAG and whether that alone makes it interview-impressive.
+- Revisit later: Harden tenant isolation in `/v1/ai/chat`, add schema validation, and practice the 30-second claim without overstating production scale.
+
+## 2026-10-27 - Distributed-State and RAG Foundations
+- Command: `cat /Users/mac/.codex/skills/limitplane-tutor/SKILL.md`; read current learning records; inspected `src/redis/createRedisIpRuntime.js`, Redis/server wiring, local monthly state, `src/ai/memoryStore.js`, and the `/v1/ai/chat` grounding path with numbered lines.
+- Reason: Explain what distributed means, which LimitPlane components are actually shared, what RAG means, and the behavior before versus after retrieval.
+- Result: Prepared a beginner-to-interview explanation showing replica-local inconsistency, Redis as shared state, Lua atomicity, the current hybrid boundary, and the complete event-document -> TF-IDF -> cosine retrieval -> prompt augmentation -> Groq generation pipeline.
+- Files changed: `progress.md`, `sessions.md`
+- Dependencies changed: none
+- Learner stuck point: The words distributed and RAG were understood as project labels rather than concrete data ownership and request-time flows.
+- Revisit later: Move RAG incident storage to a shared tenant-scoped system before claiming distributed RAG.
+
+## 2026-10-27 - Shared Monthly Quota for Multiple Gateway Replicas
+- Command: Read the LimitPlane tutor skill and current trackers; inspected monthly, Redis runtime, server/CLI, tests, environment, README, and architecture sources; added code with `apply_patch`; ran Node syntax checks, `git diff --check`, `npm test`, and `npm run test:integration`; rendered master/interview/request/data-flow diagrams with Mermaid CLI and local Chrome; visually inspected the interview HLD.
+- Reason: Add the smallest meaningful feature needed for horizontally scaled gateways to share core quota and burst-enforcement state rather than granting one monthly quota per process.
+- Result: Added `RedisMonthlyQuotaLimiter`, an atomic Lua check-and-spend counter scoped to the UTC month and expiring at the next month boundary. Redis runtime now shares monthly quota along with tenant/IP burst buckets, fingerprints, and IP reputation. Server, AI token proxy, reverse-proxy CLI, exports, tests, environment docs, README, and HLDs were updated. Verification: 70 unit tests and 6 real-Redis integration tests passed; a 20-request concurrent two-replica simulation admitted exactly 10 requests for quota 10.
+- Files changed: New Redis monthly limiter; Redis runtime; gateway await contract; server/CLI/export wiring; Redis integration tests; `.env.example`; README; architecture sources and rendered images; `sessions.md`; `progress.md`
+- Dependencies changed: none
+- Learner stuck point: Which minimum shared state makes multi-replica enforcement credible.
+- Revisit later: The monthly, IP, and tenant checks are individually atomic but still sequential; one composite Lua decision remains the next consistency improvement.

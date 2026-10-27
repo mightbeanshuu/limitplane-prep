@@ -87,7 +87,7 @@ export function createLimitPlane({
     // step 3a: the monthly plan meter (skipped when the tier has no cap)
     let month = null;
     if (plan.monthlyQuota !== undefined) {
-      month = monthly.check({ key: plan.monthlyKey, quota: plan.monthlyQuota, cost: plan.cost });
+      month = await monthly.check({ key: plan.monthlyKey, quota: plan.monthlyQuota, cost: plan.cost });
     }
 
     // With per-IP enforcement enabled, the tenant keeps its base-plan bucket

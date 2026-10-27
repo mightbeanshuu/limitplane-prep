@@ -65,7 +65,7 @@ flowchart TB
     TENANTFILE[(".tenants.json")]
     ORGFILE[(".orgs.json")]
     MEMFILE[(".memory.jsonl")]
-    REDIS[("Redis + Lua<br/>optional shared runtime<br/>buckets, fingerprints,<br/>bans, storms, strikes")]
+    REDIS[("Redis + Lua<br/>optional shared enforcement<br/>monthly + burst buckets,<br/>fingerprints, reputation")]
   end
 
   subgraph EXTERNAL["EXTERNAL SERVICES"]
@@ -112,9 +112,9 @@ flowchart TB
   CONFIG --> POLICY
   AUTO --> BAN
 
-  IPBURST --> RAM
-  TENANTBURST --> RAM
-  MONTH --> RAM
+  IPBURST -- "fallback" --> RAM
+  TENANTBURST -- "fallback" --> RAM
+  MONTH -- "fallback" --> RAM
   AUDIT --> RAM
   STATS --> RAM
   AUTO --> RAM
@@ -123,6 +123,7 @@ flowchart TB
   ORGS --> ORGFILE
   MEMORY --> MEMFILE
   LANE -. "30 events + TTL" .-> REDIS
+  MONTH -. "atomic monthly charge" .-> REDIS
   IPBURST -. "atomic Lua bucket" .-> REDIS
   TENANTBURST -. "atomic Lua bucket" .-> REDIS
   AUTO -. "ban + storm + strikes TTL" .-> REDIS

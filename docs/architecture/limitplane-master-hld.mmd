@@ -56,7 +56,7 @@ flowchart LR
     TFILE[(".tenants.json<br/>tenant tier persistence")]
     OFILE[(".orgs.json<br/>users, roles, orgs, sites")]
     MFILE[(".memory.jsonl<br/>append-only incidents")]
-    REDIS[("Redis + Lua<br/>optional shared runtime<br/>buckets, fingerprints,<br/>bans, storms, strikes")]
+    REDIS[("Redis + Lua<br/>optional shared enforcement<br/>monthly + burst buckets,<br/>fingerprints, reputation")]
   end
 
   subgraph EXT["8. External Services"]
@@ -126,15 +126,16 @@ flowchart LR
   ORG --> OFILE
   TENANT --> TFILE
   MEM --> MFILE
-  MQ --> RAM
-  IPTB --> RAM
-  TTB --> RAM
+  MQ -- "fallback" --> RAM
+  IPTB -- "fallback" --> RAM
+  TTB -- "fallback" --> RAM
   FP --> RAM
   AUDIT --> RAM
   STATS --> RAM
   AUTO --> RAM
 
   FP -. "30 events + TTL" .-> REDIS
+  MQ -. "atomic monthly charge" .-> REDIS
   IPTB -. "atomic Lua bucket" .-> REDIS
   TTB -. "atomic Lua bucket" .-> REDIS
   AUTO -. "ban + storm + strikes TTL" .-> REDIS
