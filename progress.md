@@ -1335,3 +1335,11 @@ Build a production-style distributed, multi-tenant rate limiter with Redis/Lua, 
 - Dependencies changed: none
 - Learner stuck point: Which minimum shared state makes multi-replica enforcement credible.
 - Revisit later: The monthly, IP, and tenant checks are individually atomic but still sequential; one composite Lua decision remains the next consistency improvement.
+
+## 2026-10-27 - Multi-Replica Feature Commit and Push
+- Command: `git diff --check`; `npm test`; `npm run test:integration`; `git add ...`; `git commit -m "feat: share monthly quotas across gateway replicas"`; `git push origin main`
+- Reason: Publish the smallest defensible distributed-enforcement extension to the isolated Amazon-prep repository without modifying the original LimitPlane repository.
+- Result: Feature commit `8f8524d` was pushed to `origin/main` at `https://github.com/mightbeanshuu/limitplane-prep`. The original `upstream` repository was not changed or pushed.
+- Files changed: Implementation, tests, README/environment guidance, architecture diagrams, and learning trackers included in commit `8f8524d`
+- Dependencies changed: none
+- Revisit later: Keep the claim precise: Redis mode distributes core admission state; dashboard, audit, and other control-plane state remain partly replica-local.

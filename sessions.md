@@ -815,7 +815,7 @@
 - Next session: Explain-back, then atomic composite limiting
 
 ## 2026-10-27 - Multi-Replica Admission State Completed
-- Status: Implemented and verified; GitHub push pending in this turn
+- Status: Implemented, verified, and pushed to `limitplane-prep` in feature commit `8f8524d`
 - Concepts taught: Horizontally scaled gateway replicas, shared admission state, atomic Redis monthly accounting, UTC month keys, expiry at billing reset, and local fallback compatibility
 - Examples used: Two independent limiter instances concurrently issuing twenty one-unit charges against a shared quota of ten
 - Project mapping: `src/algorithms/redisMonthlyQuotaLimiter.js`, `src/redis/createRedisIpRuntime.js`, `src/gateway/limitPlane.js`, `src/server.js`, `bin/limitplane.js`, Redis integration tests, README, and architecture diagrams
